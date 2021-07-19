@@ -258,8 +258,8 @@ func addConditionToStatus(plc *policyv1.ConfigurationPolicy, cond *policyv1.Cond
 	}
 	(*plc).Status.CompliancyDetails[index].ComplianceState = complianceState
 
-	if !checkMessageSimilarity((*plc).Status.CompliancyDetails[index].Conditions, cond) {
-		conditions := AppendCondition((*plc).Status.CompliancyDetails[index].Conditions, cond, "", false)
+	if !isLastConditionSimilar((*plc).Status.CompliancyDetails[index].Conditions, cond) {
+		conditions := AppendCondition((*plc).Status.CompliancyDetails[index].Conditions, cond)
 		(*plc).Status.CompliancyDetails[index].Conditions = conditions
 		update = true
 	}
@@ -831,8 +831,8 @@ func getMapping(apigroups []*restmapper.APIGroupResources, ext runtime.RawExtens
 			}
 			policy.Status.CompliancyDetails[index].ComplianceState = policyv1.NonCompliant
 
-			if !checkMessageSimilarity(policy.Status.CompliancyDetails[index].Conditions, cond) {
-				conditions := AppendCondition(policy.Status.CompliancyDetails[index].Conditions, cond, gvk.GroupKind().Kind, false)
+			if !isLastConditionSimilar(policy.Status.CompliancyDetails[index].Conditions, cond) {
+				conditions := AppendCondition(policy.Status.CompliancyDetails[index].Conditions, cond)
 				policy.Status.CompliancyDetails[index].Conditions = conditions
 				updateNeeded = true
 			}
@@ -1010,20 +1010,20 @@ func getAllNamespaces() (list []string) {
 	return namespacesNames
 }
 
-func checkMessageSimilarity(conditions []policyv1.Condition, cond *policyv1.Condition) bool {
-	same := true
-	lastIndex := len(conditions)
-	if lastIndex > 0 {
-		oldCond := conditions[lastIndex-1]
-		if !IsSimilarToLastCondition(oldCond, *cond) {
-			// objectT.Status.Conditions = AppendCondition(objectT.Status.Conditions, cond, "object", false)
-			same = false
-		}
-	} else {
-		// objectT.Status.Conditions = AppendCondition(objectT.Status.Conditions, cond, "object", false)
-		same = false
+// isLastConditionSimilar checks if the last condition in the list is similar to the given one
+func isLastConditionSimilar(conditions []policyv1.Condition, cond *policyv1.Condition) bool {
+	if len(conditions) == 0 {
+		return false
 	}
-	return same
+	return IsSimilarToLastCondition(conditions[len(conditions)-1], *cond)
+}
+
+// IsSimilarToLastCondition checks if the conditions are similar, to not update with the same info
+func IsSimilarToLastCondition(oldCond policyv1.Condition, newCond policyv1.Condition) bool {
+	return reflect.DeepEqual(oldCond.Status, newCond.Status) &&
+		reflect.DeepEqual(oldCond.Reason, newCond.Reason) &&
+		reflect.DeepEqual(oldCond.Message, newCond.Message) &&
+		reflect.DeepEqual(oldCond.Type, newCond.Type)
 }
 
 // objectExists returns true if the object is found
@@ -1457,24 +1457,22 @@ func updateTemplate(
 	return false, false, "", false
 }
 
-// AppendCondition check and appends conditions
-func AppendCondition(conditions []policyv1.Condition, newCond *policyv1.Condition, resourceType string,
-	resolved ...bool) (conditionsRes []policyv1.Condition) {
-	defer recoverFlow()
-	lastIndex := len(conditions)
-	if lastIndex > 0 {
-		oldCond := conditions[lastIndex-1]
-		if IsSimilarToLastCondition(oldCond, *newCond) {
-			conditions[lastIndex-1] = *newCond
-			return conditions
-		}
-
-	} else {
+// AppendCondition updates the condition slice with the new condition. If the new condition is
+// similar to the last condition on the slice, then the last condition is updated, otherwise the
+// new condition is appended.
+// jkulikau: updated exported function signature: want to confirm that's ok in this case...
+func AppendCondition(conditions []policyv1.Condition, newCond *policyv1.Condition) []policyv1.Condition {
+	if len(conditions) == 0 {
 		//first condition => trigger event
 		conditions = append(conditions, *newCond)
 		return conditions
 	}
-	conditions[lastIndex-1] = *newCond
+	if isLastConditionSimilar(conditions, newCond) {
+		// If the last condition and the new one are similar, overwrite the old one.
+		conditions[len(conditions)-1] = *newCond
+		return conditions
+	}
+	conditions = append(conditions, *newCond) // jkulikau: was it a bug that this wasn't appending before?
 	return conditions
 }
 
@@ -1507,17 +1505,6 @@ func createKeyValuePairs(m map[string]string) string {
 	}
 	s := strings.TrimSuffix(b.String(), ",")
 	return s
-}
-
-//IsSimilarToLastCondition checks the diff, so that we don't keep updating with the same info
-func IsSimilarToLastCondition(oldCond policyv1.Condition, newCond policyv1.Condition) bool {
-	if reflect.DeepEqual(oldCond.Status, newCond.Status) &&
-		reflect.DeepEqual(oldCond.Reason, newCond.Reason) &&
-		reflect.DeepEqual(oldCond.Message, newCond.Message) &&
-		reflect.DeepEqual(oldCond.Type, newCond.Type) {
-		return true
-	}
-	return false
 }
 
 func addForUpdate(policy *policyv1.ConfigurationPolicy) {
@@ -1710,10 +1697,4 @@ func convertPolicyStatusToString(plc *policyv1.ConfigurationPolicy) (results str
 		}
 	}
 	return result
-}
-
-func recoverFlow() {
-	if r := recover(); r != nil {
-		fmt.Println("ALERT!!!! -> recovered from ", r)
-	}
 }
