@@ -236,7 +236,7 @@ func PeriodicallyExecConfigPolicies(freq uint, test bool) {
 		if KubeClient == nil {
 			return
 		}
-		if test == true {
+		if test {
 			return
 		}
 	}
@@ -265,8 +265,7 @@ func addConditionToStatus(plc *policyv1.ConfigurationPolicy, cond *policyv1.Cond
 }
 
 func createViolation(plc *policyv1.ConfigurationPolicy, index int, reason string, message string) (result bool) {
-	var cond *policyv1.Condition
-	cond = &policyv1.Condition{
+	cond := &policyv1.Condition{
 		Type:               "violation",
 		Status:             corev1.ConditionTrue,
 		LastTransitionTime: metav1.Now(),
@@ -277,8 +276,7 @@ func createViolation(plc *policyv1.ConfigurationPolicy, index int, reason string
 }
 
 func createNotification(plc *policyv1.ConfigurationPolicy, index int, reason string, message string) (result bool) {
-	var cond *policyv1.Condition
-	cond = &policyv1.Condition{
+	cond := &policyv1.Condition{
 		Type:               "notification",
 		Status:             corev1.ConditionTrue,
 		LastTransitionTime: metav1.Now(),
@@ -409,10 +407,8 @@ func handleObjectTemplates(plc policyv1.ConfigurationPolicy, apiresourcelist []*
 					}
 				}
 			}
-			if related != nil {
-				for _, object := range related {
-					relatedObjects = updateRelatedObjectsStatus(relatedObjects, object)
-				}
+			for _, object := range related {
+				relatedObjects = updateRelatedObjectsStatus(relatedObjects, object)
 			}
 		}
 		if !handled && !enforce {
@@ -454,7 +450,7 @@ func sortRelatedObjectsAndUpdate(plc *policyv1.ConfigurationPolicy, related,
 	update := false
 	if len(oldRelated) == len(related) {
 		for i, entry := range oldRelated {
-			if gocmp.Equal(entry, related[i]) == false {
+			if !gocmp.Equal(entry, related[i]) {
 				update = true
 			}
 		}
@@ -1577,11 +1573,7 @@ func printMap(myMap map[string]*policyv1.ConfigurationPolicy) {
 
 	mapToPrint := map[string][]string{}
 	for k, v := range myMap {
-		if _, ok := mapToPrint[v.Name]; ok {
-			mapToPrint[v.Name] = append(mapToPrint[v.Name], strings.Split(k, "/")[0])
-		} else {
-			mapToPrint[v.Name] = []string{strings.Split(k, "/")[0]}
-		}
+		mapToPrint[v.Name] = append(mapToPrint[v.Name], strings.Split(k, "/")[0])
 	}
 
 	for k, v := range mapToPrint {
