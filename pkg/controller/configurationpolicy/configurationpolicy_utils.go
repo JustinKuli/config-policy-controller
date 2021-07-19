@@ -278,7 +278,7 @@ func createMustHaveStatus(desiredName string, kind string, complianceObjects map
 	// Noncompliant with no resources -- return violation immediately
 	if !compliant && desiredName == "" {
 		message := fmt.Sprintf("No instances of `%v` found as specified", kind)
-		return createViolation(plc, indx, "K8s does not have a `must have` object", message)
+		return addCondition(plc, indx, "K8s does not have a `must have` object", message, policyv1.NonCompliant)
 	}
 	// Parse discovered resources
 	nameList := []string{}
@@ -308,11 +308,11 @@ func createMustHaveStatus(desiredName string, kind string, complianceObjects map
 	// Compliant -- return notification
 	if compliant {
 		message := fmt.Sprintf("%v %v as specified, therefore this Object template is compliant", kind, names)
-		return createNotification(plc, indx, "K8s `must have` object already exists", message)
+		return addCondition(plc, indx, "K8s `must have` object already exists", message, policyv1.Compliant)
 	}
 	// Noncompliant -- return violation
 	message := fmt.Sprintf("%v not found: %v", kind, names)
-	return createViolation(plc, indx, "K8s does not have a `must have` object", message)
+	return addCondition(plc, indx, "K8s does not have a `must have` object", message, policyv1.NonCompliant)
 }
 
 //createMustNotHaveStatus generates a status for a mustnothave policy
@@ -336,9 +336,9 @@ func createMustNotHaveStatus(kind string, complianceObjects map[string]map[strin
 	// Compliant -- return notification
 	if compliant {
 		message := fmt.Sprintf("%v %v missing as expected, therefore this Object template is compliant", kind, names)
-		return createNotification(plc, indx, "K8s `must not have` object already missing", message)
+		return addCondition(plc, indx, "K8s `must not have` object already missing", message, policyv1.Compliant)
 	}
 	// Noncompliant -- return violation
 	message := fmt.Sprintf("%v found: %v", kind, names)
-	return createViolation(plc, indx, "K8s has a `must not have` object", message)
+	return addCondition(plc, indx, "K8s has a `must not have` object", message, policyv1.NonCompliant)
 }

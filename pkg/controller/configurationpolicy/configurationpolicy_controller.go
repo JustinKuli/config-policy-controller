@@ -242,48 +242,43 @@ func PeriodicallyExecConfigPolicies(freq uint, test bool) {
 	}
 }
 
-func addConditionToStatus(plc *policyv1.ConfigurationPolicy, cond *policyv1.Condition, index int,
-	complianceState policyv1.ComplianceState) (updateNeeded bool) {
-	var update bool
+// addCondition ensures the latest Condition at plc.status.compliancyDetails[index] matches the
+// given inputs. If it doesn't, this will add the condition to the referenced policy, and return
+// `true` to indicate an update on the server is needed.
+func addCondition(plc *policyv1.ConfigurationPolicy, index int, reason, message string,
+	compliant policyv1.ComplianceState) (updateNeeded bool) {
+	var condType string
+	if compliant == policyv1.Compliant {
+		condType = "notification"
+	} else {
+		condType = "violation"
+	}
+
+	cond := &policyv1.Condition{
+		Type:               condType,
+		Status:             corev1.ConditionTrue,
+		LastTransitionTime: metav1.Now(),
+		Reason:             reason,
+		Message:            message,
+	}
+
 	if len((*plc).Status.CompliancyDetails) <= index {
 		(*plc).Status.CompliancyDetails = append((*plc).Status.CompliancyDetails, policyv1.TemplateStatus{
-			ComplianceState: complianceState,
+			ComplianceState: compliant,
 			Conditions:      []policyv1.Condition{},
 		})
+		updateNeeded = true
+	} else if (*plc).Status.CompliancyDetails[index].ComplianceState != compliant {
+		(*plc).Status.CompliancyDetails[index].ComplianceState = compliant
+		updateNeeded = true
 	}
-	if (*plc).Status.CompliancyDetails[index].ComplianceState != complianceState {
-		update = true
-	}
-	(*plc).Status.CompliancyDetails[index].ComplianceState = complianceState
 
 	if !isLastConditionSimilar((*plc).Status.CompliancyDetails[index].Conditions, cond) {
 		conditions := AppendCondition((*plc).Status.CompliancyDetails[index].Conditions, cond)
 		(*plc).Status.CompliancyDetails[index].Conditions = conditions
-		update = true
+		updateNeeded = true
 	}
-	return update
-}
-
-func createViolation(plc *policyv1.ConfigurationPolicy, index int, reason string, message string) (result bool) {
-	cond := &policyv1.Condition{
-		Type:               "violation",
-		Status:             corev1.ConditionTrue,
-		LastTransitionTime: metav1.Now(),
-		Reason:             reason,
-		Message:            message,
-	}
-	return addConditionToStatus(plc, cond, index, policyv1.NonCompliant)
-}
-
-func createNotification(plc *policyv1.ConfigurationPolicy, index int, reason string, message string) (result bool) {
-	cond := &policyv1.Condition{
-		Type:               "notification",
-		Status:             corev1.ConditionTrue,
-		LastTransitionTime: metav1.Now(),
-		Reason:             reason,
-		Message:            message,
-	}
-	return addConditionToStatus(plc, cond, index, policyv1.Compliant)
+	return updateNeeded
 }
 
 func handleObjectTemplates(plc policyv1.ConfigurationPolicy, apiresourcelist []*metav1.APIResourceList,
@@ -292,7 +287,7 @@ func handleObjectTemplates(plc policyv1.ConfigurationPolicy, apiresourcelist []*
 	plcNamespaces := getPolicyNamespaces(plc)
 	if plc.Spec.RemediationAction == "" {
 		message := "Policy does not have a RemediationAction specified"
-		update := createViolation(&plc, 0, "No RemediationAction", message)
+		update := addCondition(&plc, 0, "No RemediationAction", message, policyv1.NonCompliant)
 		if update {
 			recorder.Event(&plc, eventWarning, fmt.Sprintf(plcFmtStr, plc.GetName()), convertPolicyStatusToString(&plc))
 			addForUpdate(&plc)
@@ -342,7 +337,7 @@ func handleObjectTemplates(plc policyv1.ConfigurationPolicy, apiresourcelist []*
 		if templates.HasTemplate(string(ext.Raw)) {
 			resolvedblob, tplErr := templates.ResolveTemplate(blob)
 			if tplErr != nil {
-				update := createViolation(&plc, 0, "Error processing template", tplErr.Error())
+				update := addCondition(&plc, 0, "Error processing template", tplErr.Error(), policyv1.NonCompliant)
 				if update {
 					recorder.Event(&plc, eventWarning, fmt.Sprintf(plcFmtStr, plc.GetName()), convertPolicyStatusToString(&plc))
 					addForUpdate(&plc)
@@ -546,8 +541,8 @@ func handleObjects(objectT *policyv1.ObjectTemplate, namespace string, index int
 	dclient, rsrc, namespaced := getClientRsrc(mapping, apiresourcelist)
 	if namespaced && namespace == "" {
 		//namespaced but none specified, generate violation
-		updateStatus := createViolation(policy, index, "K8s missing namespace",
-			"namespaced object has no namespace specified")
+		updateStatus := addCondition(policy, index, "K8s missing namespace",
+			"namespaced object has no namespace specified", policyv1.NonCompliant)
 		if updateStatus {
 			eventType := eventNormal
 			if index < len(policy.Status.CompliancyDetails) &&
@@ -698,7 +693,7 @@ func handleSingleObj(policy *policyv1.ConfigurationPolicy, remediation policyv1.
 			specViolation = throwSpecViolation
 			compliant = false
 		} else if !updated && msg != "" {
-			updateNeeded = createViolation(policy, data["index"].(int), "K8s update template error", msg)
+			updateNeeded = addCondition(policy, data["index"].(int), "K8s update template error", msg, policyv1.NonCompliant)
 		} else if objShouldExist {
 			//it is a must have and it does exist, so it is compliant
 			compliant = true
@@ -921,10 +916,10 @@ func handleExistsMustNotHave(plc *policyv1.ConfigurationPolicy, action policyv1.
 		nameStr := createResourceNameStr([]string{name}, namespace, namespaced)
 		if deleted, err = deleteObject(namespaced, namespace, name, rsrc, dclient); !deleted {
 			message := fmt.Sprintf("%v %v exists, and cannot be deleted, reason: `%v`", rsrc.Resource, nameStr, err)
-			update = createViolation(plc, index, "K8s deletion error", message)
+			update = addCondition(plc, index, "K8s deletion error", message, policyv1.NonCompliant)
 		} else { //deleted successfully
 			message := fmt.Sprintf("%v %v existed, and was deleted successfully", rsrc.Resource, nameStr)
-			update = createNotification(plc, index, "K8s deletion success", message)
+			update = addCondition(plc, index, "K8s deletion success", message, policyv1.Compliant)
 		}
 	}
 	return update, err
@@ -947,11 +942,11 @@ func handleMissingMustHave(plc *policyv1.ConfigurationPolicy, action policyv1.Re
 		nameStr := createResourceNameStr([]string{name}, namespace, namespaced)
 		if created, err = createObject(namespaced, namespace, name, rsrc, unstruct, dclient); !created {
 			message := fmt.Sprintf("%v %v is missing, and cannot be created, reason: `%v`", rsrc.Resource, nameStr, err)
-			update = createViolation(plc, index, "K8s creation error", message)
+			update = addCondition(plc, index, "K8s creation error", message, policyv1.NonCompliant)
 		} else { //created successfully
 			glog.V(8).Infof("entering [%v] created successfully", name)
 			message := fmt.Sprintf("%v %v was missing, and was created successfully", rsrc.Resource, nameStr)
-			update = createNotification(plc, index, "K8s creation success", message)
+			update = addCondition(plc, index, "K8s creation success", message, policyv1.Compliant)
 		}
 	}
 	return update, err
