@@ -1226,11 +1226,10 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 	if ctype == "mustonlyhave" {
 		return new
 	}
+
 	newCopy := append([]interface{}{}, new...)
-	indexesSkipped := map[int]bool{}
-	for i := range newCopy {
-		indexesSkipped[i] = false
-	}
+	indexWritten := map[int]bool{}
+
 	oldItemSet := map[string]*countedVal{}
 	for _, val2 := range old {
 		if entry, ok := oldItemSet[fmt.Sprint(val2)]; ok {
@@ -1255,16 +1254,15 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 			default:
 				mergedObj = val1
 			}
-			if !indexesSkipped[newIdx] && reflect.DeepEqual(mergedObj, val2) {
-				count = count + 1
+			if !indexWritten[newIdx] && reflect.DeepEqual(mergedObj, val2) {
+				count++
 				new[newIdx] = mergedObj
-				indexesSkipped[newIdx] = true
+				indexWritten[newIdx] = true
 			}
 		}
-		if count < reqCount {
-			for i := 0; i < (reqCount - count); i++ {
-				new = append(new, val2)
-			}
+		// add enough duplicates to preserve the original number
+		for i := count; i < reqCount; i++ {
+			new = append(new, val2)
 		}
 	}
 	return new
