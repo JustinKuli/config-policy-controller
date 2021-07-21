@@ -1212,10 +1212,8 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 	}
 
 	newCopy := append([]interface{}{}, new...)
-	indexesSkipped := map[int]bool{}
-	for i := range newCopy {
-		indexesSkipped[i] = false
-	}
+	idxWritten := map[int]bool{}
+
 	oldItemSet := map[string]map[string]interface{}{}
 	for _, val2 := range old {
 		if entry, ok := oldItemSet[fmt.Sprint(val2)]; ok {
@@ -1233,7 +1231,7 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 		reqCount := data["count"]
 		val2 := data["value"]
 		for newIdx, val1 := range newCopy {
-			if indexesSkipped[newIdx] {
+			if idxWritten[newIdx] {
 				continue
 			}
 			var mergedObj interface{}
@@ -1246,7 +1244,7 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 			if reflect.DeepEqual(mergedObj, val2) {
 				count = count + 1
 				new[newIdx] = mergedObj
-				indexesSkipped[newIdx] = true
+				idxWritten[newIdx] = true
 			}
 		}
 		if count < reqCount.(int) {
