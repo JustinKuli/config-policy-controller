@@ -1243,7 +1243,6 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 		reqCount := data["count"]
 		val2 := data["value"]
 		for newIdx, val1 := range newCopy {
-			matches := false
 			var mergedObj interface{}
 			switch val2 := val2.(type) {
 			case map[string]interface{}:
@@ -1251,11 +1250,8 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 			default:
 				mergedObj = val1
 			}
-			if reflect.DeepEqual(mergedObj, val2) && !indexesSkipped[newIdx] {
+			if !indexesSkipped[newIdx] && reflect.DeepEqual(mergedObj, val2) {
 				count = count + 1
-				matches = true
-			}
-			if matches && !indexesSkipped[newIdx] {
 				new[newIdx] = mergedObj
 				indexesSkipped[newIdx] = true
 			}
