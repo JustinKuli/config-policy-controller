@@ -1217,6 +1217,11 @@ func mergeSpecsHelper(x1, x2 interface{}, ctype string) interface{} {
 	return strings.TrimSpace(x1.(string))
 }
 
+type countedVal struct {
+	count int
+	val   interface{}
+}
+
 func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []interface{}) {
 	if ctype == "mustonlyhave" {
 		return new
@@ -1226,22 +1231,22 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 	for i := range newCopy {
 		indexesSkipped[i] = false
 	}
-	oldItemSet := map[string]map[string]interface{}{}
+	oldItemSet := map[string]*countedVal{}
 	for _, val2 := range old {
 		if entry, ok := oldItemSet[fmt.Sprint(val2)]; ok {
-			oldItemSet[fmt.Sprint(val2)]["count"] = entry["count"].(int) + 1
+			entry.count++
 		} else {
-			oldItemSet[fmt.Sprint(val2)] = map[string]interface{}{
-				"count": 1,
-				"value": val2,
+			oldItemSet[fmt.Sprint(val2)] = &countedVal{
+				count: 1,
+				val:   val2,
 			}
 		}
 	}
 
 	for _, data := range oldItemSet {
 		count := 0
-		reqCount := data["count"]
-		val2 := data["value"]
+		reqCount := data.count
+		val2 := data.val
 		for newIdx, val1 := range newCopy {
 			var mergedObj interface{}
 			switch val2 := val2.(type) {
@@ -1256,8 +1261,8 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 				indexesSkipped[newIdx] = true
 			}
 		}
-		if count < reqCount.(int) {
-			for i := 0; i < (reqCount.(int) - count); i++ {
+		if count < reqCount {
+			for i := 0; i < (reqCount - count); i++ {
 				new = append(new, val2)
 			}
 		}
