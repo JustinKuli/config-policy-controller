@@ -1244,25 +1244,19 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 		val2 := data["value"]
 		for newIdx, val1 := range newCopy {
 			matches := false
-			if ctype != "mustonlyhave" {
-				var mergedObj interface{}
-				switch val2 := val2.(type) {
-				case map[string]interface{}:
-					mergedObj, _ = compareSpecs(val1.(map[string]interface{}), val2, ctype)
-				default:
-					mergedObj = val1
-				}
-				if reflect.DeepEqual(mergedObj, val2) && !indexesSkipped[newIdx] {
-					count = count + 1
-					matches = true
-				}
-				if matches && ctype != "mustonlyhave" && !indexesSkipped[newIdx] {
-					new[newIdx] = mergedObj
-					indexesSkipped[newIdx] = true
-				}
-
-			} else if reflect.DeepEqual(val1, val2) && !indexesSkipped[newIdx] {
+			var mergedObj interface{}
+			switch val2 := val2.(type) {
+			case map[string]interface{}:
+				mergedObj, _ = compareSpecs(val1.(map[string]interface{}), val2, ctype)
+			default:
+				mergedObj = val1
+			}
+			if reflect.DeepEqual(mergedObj, val2) && !indexesSkipped[newIdx] {
 				count = count + 1
+				matches = true
+			}
+			if matches && !indexesSkipped[newIdx] {
+				new[newIdx] = mergedObj
 				indexesSkipped[newIdx] = true
 			}
 		}
