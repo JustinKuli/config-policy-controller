@@ -1237,6 +1237,8 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 			var mergedObj interface{}
 			switch val2 := val2.(type) {
 			case map[string]interface{}:
+				// jkulikau: this could panic if val1's type can't be converted like this
+				// That might not be very likely, because it would be a mixed type list
 				mergedSpecs, _ := mergeSpecs(val1.(map[string]interface{}), val2, ctype)
 				mergedObj = mergedSpecs.(map[string]interface{})
 			default:
@@ -1284,6 +1286,8 @@ func compareSpecs(newSpec map[string]interface{}, oldSpec map[string]interface{}
 	}
 	merged, err := mergeSpecs(newSpec, oldSpec, ctype)
 	if err != nil {
+		// jkulikau: if mergeSpecs has an error, it returns nil, err
+		// so then I think this type assertion will panic (which is bad).
 		return merged.(map[string]interface{}), err
 	}
 	return merged.(map[string]interface{}), nil
@@ -1293,79 +1297,81 @@ func handleSingleKey(key string, unstruct unstructured.Unstructured, existingObj
 	complianceType string) (errormsg string, update bool, merged interface{}, skip bool) {
 	var err error
 	updateNeeded := false
-	if !isDenylisted(key) {
-		newObj := formatTemplate(unstruct, key)
-		oldObj := existingObj.UnstructuredContent()[key]
-		typeErr := ""
-		//merge changes into new spec
-		var mergedObj interface{}
-		switch newObj := newObj.(type) {
-		case []interface{}:
-			switch oldObj := oldObj.(type) {
-			case []interface{}:
-				mergedObj, err = compareLists(newObj, oldObj, complianceType)
-			case nil:
-				mergedObj = newObj
-			default:
-				typeErr = fmt.Sprintf("Error merging changes into key \"%s\": object type of template and existing do not match",
-					key)
-			}
-		case map[string]interface{}:
-			switch oldObj := oldObj.(type) {
-			case (map[string]interface{}):
-				mergedObj, err = compareSpecs(newObj, oldObj, complianceType)
-			case nil:
-				mergedObj = newObj
-			default:
-				typeErr = fmt.Sprintf("Error merging changes into key \"%s\": object type of template and existing do not match",
-					key)
-			}
-		default:
-			mergedObj = newObj
-		}
-		if typeErr != "" {
-			return typeErr, false, mergedObj, false
-		}
-		if err != nil {
-			message := fmt.Sprintf("Error merging changes into %s: %s", key, err)
-			return message, false, mergedObj, false
-		}
-		if key == "metadata" {
-			oldObj = formatMetadata(oldObj.(map[string]interface{}))
-			mergedObj = formatMetadata(mergedObj.(map[string]interface{}))
-		}
-		//check if merged spec has changed
-		nJSON, err := json.Marshal(mergedObj)
-		if err != nil {
-			message := fmt.Sprintf(convertJSONError, key, err)
-			return message, false, mergedObj, false
-		}
-		oJSON, err := json.Marshal(oldObj)
-		if err != nil {
-			message := fmt.Sprintf(convertJSONError, key, err)
-			return message, false, mergedObj, false
-		}
-		switch mergedObj := mergedObj.(type) {
-		case (map[string]interface{}):
-			if oldObj == nil || !checkFieldsWithSort(mergedObj, oldObj.(map[string]interface{})) {
-				updateNeeded = true
-			}
-		case ([]map[string]interface{}):
-			if oldObj == nil || !checkListFieldsWithSort(mergedObj, oldObj.([]map[string]interface{})) {
-				updateNeeded = true
-			}
-		case ([]interface{}):
-			if oldObj == nil || !checkListsMatch(mergedObj, oldObj.([]interface{})) {
-				updateNeeded = true
-			}
-		default:
-			if !reflect.DeepEqual(nJSON, oJSON) {
-				updateNeeded = true
-			}
-		}
-		return "", updateNeeded, mergedObj, false
+	if isDenylisted(key) {
+		return "", false, nil, true
 	}
-	return "", false, nil, true
+	newObj := formatTemplate(unstruct, key)
+	oldObj := existingObj.UnstructuredContent()[key]
+	typeErr := ""
+	//merge changes into new spec
+	var mergedObj interface{}
+	switch newObj := newObj.(type) {
+	case []interface{}:
+		switch oldObj := oldObj.(type) {
+		case []interface{}:
+			mergedObj, err = compareLists(newObj, oldObj, complianceType)
+		case nil:
+			mergedObj = newObj
+		default:
+			typeErr = fmt.Sprintf("Error merging changes into key \"%s\": object type of template and existing do not match",
+				key)
+		}
+	case map[string]interface{}:
+		switch oldObj := oldObj.(type) {
+		case (map[string]interface{}):
+			mergedObj, err = compareSpecs(newObj, oldObj, complianceType)
+		case nil:
+			mergedObj = newObj
+		default:
+			typeErr = fmt.Sprintf("Error merging changes into key \"%s\": object type of template and existing do not match",
+				key)
+		}
+	default:
+		mergedObj = newObj
+	}
+	if typeErr != "" {
+		return typeErr, false, mergedObj, false
+	}
+	if err != nil {
+		message := fmt.Sprintf("Error merging changes into %s: %s", key, err)
+		return message, false, mergedObj, false
+	}
+	if key == "metadata" {
+		oldObj = formatMetadata(oldObj.(map[string]interface{}))
+		mergedObj = formatMetadata(mergedObj.(map[string]interface{}))
+	}
+	//check if merged spec has changed
+	nJSON, err := json.Marshal(mergedObj)
+	if err != nil {
+		message := fmt.Sprintf(convertJSONError, key, err)
+		return message, false, mergedObj, false
+	}
+	oJSON, err := json.Marshal(oldObj)
+	if err != nil {
+		message := fmt.Sprintf(convertJSONError, key, err)
+		return message, false, mergedObj, false
+	}
+	// jkulikau: these oldObj type assertions could panic, although it might not be likely
+	// since the objects "should" have the same types.
+	switch mergedObj := mergedObj.(type) {
+	case (map[string]interface{}):
+		if oldObj == nil || !checkFieldsWithSort(mergedObj, oldObj.(map[string]interface{})) {
+			updateNeeded = true
+		}
+	case ([]map[string]interface{}):
+		if oldObj == nil || !checkListFieldsWithSort(mergedObj, oldObj.([]map[string]interface{})) {
+			updateNeeded = true
+		}
+	case ([]interface{}):
+		if oldObj == nil || !checkListsMatch(mergedObj, oldObj.([]interface{})) {
+			updateNeeded = true
+		}
+	default:
+		if !reflect.DeepEqual(nJSON, oJSON) {
+			updateNeeded = true
+		}
+	}
+	return "", updateNeeded, mergedObj, false
 }
 
 func handleKeys(unstruct unstructured.Unstructured, existingObj *unstructured.Unstructured,
