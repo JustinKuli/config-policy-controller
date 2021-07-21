@@ -1237,7 +1237,8 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 			var mergedObj interface{}
 			switch val2 := val2.(type) {
 			case map[string]interface{}:
-				mergedObj, _ = compareSpecs(val1.(map[string]interface{}), val2, ctype)
+				mergedSpecs, _ := mergeSpecs(val1.(map[string]interface{}), val2, ctype)
+				mergedObj = mergedSpecs.(map[string]interface{})
 			default:
 				mergedObj = val1
 			}
