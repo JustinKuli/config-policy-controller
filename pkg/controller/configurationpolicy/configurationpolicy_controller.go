@@ -1206,6 +1206,11 @@ func mergeSpecsHelper(x1, x2 interface{}, ctype string) interface{} {
 	return strings.TrimSpace(x1.(string))
 }
 
+type countedValue struct {
+	count int
+	value interface{}
+}
+
 func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []interface{}) {
 	if ctype == "mustonlyhave" {
 		return new
@@ -1214,22 +1219,22 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 	newCopy := append([]interface{}{}, new...)
 	idxWritten := map[int]bool{}
 
-	oldItemSet := map[string]map[string]interface{}{}
+	// Combine and count duplicate values in the old array.
+	oldItemSet := map[string]*countedValue{}
 	for _, val2 := range old {
 		if entry, ok := oldItemSet[fmt.Sprint(val2)]; ok {
-			oldItemSet[fmt.Sprint(val2)]["count"] = entry["count"].(int) + 1
+			entry.count++
 		} else {
-			oldItemSet[fmt.Sprint(val2)] = map[string]interface{}{
-				"count": 1,
-				"value": val2,
+			oldItemSet[fmt.Sprint(val2)] = &countedValue{
+				count: 1,
+				value: val2,
 			}
 		}
 	}
 
 	for _, data := range oldItemSet {
 		count := 0
-		reqCount := data["count"]
-		val2 := data["value"]
+		val2 := data.value
 		for newIdx, val1 := range newCopy {
 			if idxWritten[newIdx] {
 				continue
@@ -1247,10 +1252,10 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 				idxWritten[newIdx] = true
 			}
 		}
-		if count < reqCount.(int) {
-			for i := 0; i < (reqCount.(int) - count); i++ {
-				new = append(new, val2)
-			}
+
+		// The old array had duplicates of this value, so add dupes until we match the old count.
+		for i := count; i < data.count; i++ {
+			new = append(new, val2)
 		}
 	}
 	return new
