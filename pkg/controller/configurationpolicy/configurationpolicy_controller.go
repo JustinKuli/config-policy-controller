@@ -40,52 +40,47 @@ import (
 	"k8s.io/client-go/restmapper"
 )
 
-const controllerName string = "configuration-policy-controller"
+const (
+	controllerName           = "configuration-policy-controller"
+	eventNormal              = "Normal"
+	eventWarning             = "Warning"
+	eventFmtStr              = "policy: %s/%s"
+	plcFmtStr                = "policy: %s"
+	reasonWantFoundExists    = "Resource found as expected"
+	reasonWantFoundNoMatch   = "Resource found but does not match"
+	reasonWantFoundDNE       = "Resource not found but should exist"
+	reasonWantNotFoundExists = "Resource found but should not exist"
+	reasonWantNotFoundDNE    = "Resource not found as expected"
+	getObjError              = "object `%v` cannot be retrieved from the api server\n"
+	convertJSONError         = "Error converting updated %s to JSON: %s"
+)
 
-var log = logf.Log.WithName(controllerName)
+var (
+	log = logf.Log.WithName(controllerName)
 
-// availablePolicies is a cach all all available polices
-var availablePolicies common.SyncedPolicyMap
+	recorder         record.EventRecorder
+	clientSet        *kubernetes.Clientset
+	config           *rest.Config
+	reconcilingAgent *ReconcileConfigurationPolicy
 
-// PlcChan a channel used to pass policies ready for update
-var PlcChan chan *policyv1.ConfigurationPolicy
+	// availablePolicies is a cach all all available polices
+	availablePolicies common.SyncedPolicyMap
 
-var recorder record.EventRecorder
+	// PlcChan a channel used to pass policies ready for update
+	PlcChan chan *policyv1.ConfigurationPolicy
 
-var clientSet *kubernetes.Clientset
+	//Mx for making the map thread safe
+	Mx sync.RWMutex
 
-var eventNormal = "Normal"
-var eventWarning = "Warning"
-var eventFmtStr = "policy: %s/%s"
-var plcFmtStr = "policy: %s"
+	// KubeClient a k8s client used for k8s native resources
+	KubeClient *kubernetes.Interface
 
-var reasonWantFoundExists = "Resource found as expected"
-var reasonWantFoundNoMatch = "Resource found but does not match"
-var reasonWantFoundDNE = "Resource not found but should exist"
-var reasonWantNotFoundExists = "Resource found but should not exist"
-var reasonWantNotFoundDNE = "Resource not found as expected"
+	// NamespaceWatched defines which namespace we can watch for the GRC policies and ignore others
+	NamespaceWatched string
 
-const getObjError = "object `%v` cannot be retrieved from the api server\n"
-const convertJSONError = "Error converting updated %s to JSON: %s"
-
-var config *rest.Config
-
-//Mx for making the map thread safe
-var Mx sync.RWMutex
-
-//MxUpdateMap for making the map thread safe
-var MxUpdateMap sync.RWMutex
-
-// KubeClient a k8s client used for k8s native resources
-var KubeClient *kubernetes.Interface
-
-var reconcilingAgent *ReconcileConfigurationPolicy
-
-// NamespaceWatched defines which namespace we can watch for the GRC policies and ignore others
-var NamespaceWatched string
-
-// EventOnParent specifies if we also want to send events to the parent policy. Available options are yes/no/ifpresent
-var EventOnParent string
+	// EventOnParent specifies if we also want to send events to the parent policy. Available options are yes/no/ifpresent
+	EventOnParent string
+)
 
 // Add creates a new ConfigurationPolicy Controller and adds it to the Manager.
 // and Start it when the Manager is Started.
@@ -252,7 +247,7 @@ func addCondition(plc *policyv1.ConfigurationPolicy, index int, reason, message 
 		condType = "notification"
 	} else {
 		condType = "violation"
-	}
+	} // jkulikau: should this also consider unknown compliancy?
 
 	cond := &policyv1.Condition{
 		Type:               condType,
@@ -1541,7 +1536,6 @@ func handleAddingPolicy(plc *policyv1.ConfigurationPolicy) error {
 	return err
 }
 
-//=================================================================
 // Helper function to join strings
 func join(strs ...string) string {
 	var result string
@@ -1554,7 +1548,6 @@ func join(strs ...string) string {
 	return result
 }
 
-//=================================================================
 // Helper functions that pretty prints a map
 func printMap(myMap map[string]*policyv1.ConfigurationPolicy) {
 	if len(myMap) == 0 {
@@ -1623,7 +1616,6 @@ func createParentPolicy(instance *policyv1.ConfigurationPolicy) policyv1.Policy 
 	return plc
 }
 
-//=================================================================
 // convertPolicyStatusToString to be able to pass the status as event
 func convertPolicyStatusToString(plc *policyv1.ConfigurationPolicy) (results string) {
 	result := "ComplianceState is still undetermined"
