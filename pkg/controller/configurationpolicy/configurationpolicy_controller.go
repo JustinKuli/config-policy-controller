@@ -1230,6 +1230,7 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 	newCopy := append([]interface{}{}, new...)
 	indexWritten := map[int]bool{}
 
+	// Count up current items, so that we can keep that many in the final result.
 	oldItemSet := map[string]*countedVal{}
 	for _, val2 := range old {
 		if entry, ok := oldItemSet[fmt.Sprint(val2)]; ok {
@@ -1244,9 +1245,11 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 
 	for _, data := range oldItemSet {
 		count := 0
-		reqCount := data.count
 		val2 := data.val
 		for newIdx, val1 := range newCopy {
+			if indexWritten[newIdx] {
+				continue
+			}
 			var mergedObj interface{}
 			switch val2 := val2.(type) {
 			case map[string]interface{}:
@@ -1254,14 +1257,14 @@ func mergeArrays(new []interface{}, old []interface{}, ctype string) (result []i
 			default:
 				mergedObj = val1
 			}
-			if !indexWritten[newIdx] && reflect.DeepEqual(mergedObj, val2) {
+			if reflect.DeepEqual(mergedObj, val2) {
 				count++
 				new[newIdx] = mergedObj
 				indexWritten[newIdx] = true
 			}
 		}
 		// add enough duplicates to preserve the original number
-		for i := count; i < reqCount; i++ {
+		for i := count; i < data.count; i++ {
 			new = append(new, val2)
 		}
 	}
