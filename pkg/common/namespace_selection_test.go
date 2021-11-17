@@ -12,7 +12,6 @@ import (
 
 	"github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
-	coretypes "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -89,7 +88,7 @@ func TestGetAllNamespaces(t *testing.T) {
 	var objMeta = metav1.ObjectMeta{
 		Name: "default",
 	}
-	var ns = coretypes.Namespace{
+	var ns = corev1.Namespace{
 		TypeMeta:   typeMeta,
 		ObjectMeta: objMeta,
 	}

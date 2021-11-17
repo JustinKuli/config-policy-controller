@@ -49,19 +49,19 @@ var availablePolicies common.SyncedPolicyMap
 
 var clientSet *kubernetes.Clientset
 
-var eventNormal = "Normal"
-var eventWarning = "Warning"
-var eventFmtStr = "policy: %s/%s"
-var plcFmtStr = "policy: %s"
+const (
+	eventNormal  = "Normal"
+	eventWarning = "Warning"
+	eventFmtStr  = "policy: %s/%s"
+	plcFmtStr    = "policy: %s"
 
-var reasonWantFoundExists = "Resource found as expected"
-var reasonWantFoundNoMatch = "Resource found but does not match"
-var reasonWantFoundDNE = "Resource not found but should exist"
-var reasonWantNotFoundExists = "Resource found but should not exist"
-var reasonWantNotFoundDNE = "Resource not found as expected"
-
-const getObjError = "object `%v` cannot be retrieved from the api server\n"
-const convertJSONError = "Error converting updated %s to JSON: %s"
+	reasonWantFoundExists    = "Resource found as expected"
+	reasonWantFoundNoMatch   = "Resource found but does not match"
+	reasonWantFoundDNE       = "Resource not found but should exist"
+	reasonWantNotFoundExists = "Resource found but should not exist"
+	reasonWantNotFoundDNE    = "Resource not found as expected"
+	getObjError              = "object `%v` cannot be retrieved from the api server\n"
+)
 
 var config *rest.Config
 
@@ -219,7 +219,7 @@ func (r *ConfigurationPolicyReconciler) PeriodicallyExecConfigPolicies(freq uint
 		if KubeClient == nil {
 			return
 		}
-		if test == true {
+		if test {
 			return
 		}
 	}
@@ -390,10 +390,8 @@ func (r *ConfigurationPolicyReconciler) handleObjectTemplates(plc policyv1.Confi
 					}
 				}
 			}
-			if related != nil {
-				for _, object := range related {
-					relatedObjects = updateRelatedObjectsStatus(relatedObjects, object)
-				}
+			for _, object := range related {
+				relatedObjects = updateRelatedObjectsStatus(relatedObjects, object)
 			}
 		}
 		//violations for enforce configurationpolicies are already handled in handleObjects, so we only need to generate a violation
@@ -439,7 +437,7 @@ func sortRelatedObjectsAndUpdate(plc *policyv1.ConfigurationPolicy, related,
 	update := false
 	if len(oldRelated) == len(related) {
 		for i, entry := range oldRelated {
-			if gocmp.Equal(entry, related[i]) == false {
+			if !gocmp.Equal(entry, related[i]) {
 				update = true
 			}
 		}
@@ -478,8 +476,7 @@ func addConditionToStatus(plc *policyv1.ConfigurationPolicy, cond *policyv1.Cond
 
 //helper function to create a violation condition and append it to the list of conditions in the status
 func createViolation(plc *policyv1.ConfigurationPolicy, index int, reason string, message string) (result bool) {
-	var cond *policyv1.Condition
-	cond = &policyv1.Condition{
+	cond := &policyv1.Condition{
 		Type:               "violation",
 		Status:             corev1.ConditionTrue,
 		LastTransitionTime: metav1.Now(),
@@ -491,8 +488,7 @@ func createViolation(plc *policyv1.ConfigurationPolicy, index int, reason string
 
 //helper function to create a compliant notification condition and append it to the list of conditions in the status
 func createNotification(plc *policyv1.ConfigurationPolicy, index int, reason string, message string) (result bool) {
-	var cond *policyv1.Condition
-	cond = &policyv1.Condition{
+	cond := &policyv1.Condition{
 		Type:               "notification",
 		Status:             corev1.ConditionTrue,
 		LastTransitionTime: metav1.Now(),
@@ -604,7 +600,7 @@ func (r *ConfigurationPolicyReconciler) handleObjects(objectT *policyv1.ObjectTe
 			exists = false
 		}
 	}
-	objShouldExist := strings.ToLower(string(objectT.ComplianceType)) != strings.ToLower(string(policyv1.MustNotHave))
+	objShouldExist := !strings.EqualFold(string(objectT.ComplianceType), string(policyv1.MustNotHave))
 	rsrcKind = ""
 	reason = ""
 	// if the compliance is calculated by the handleSingleObj function, do not override the setting
@@ -693,7 +689,7 @@ func (r *ConfigurationPolicyReconciler) handleSingleObj(policy *policyv1.Configu
 	unstruct := data["unstruct"].(unstructured.Unstructured)
 	if !exists && objShouldExist {
 		//it is a musthave and it does not exist, so it must be created
-		if strings.ToLower(string(remediation)) == strings.ToLower(string(policyv1.Enforce)) {
+		if strings.EqualFold(string(remediation), string(policyv1.Enforce)) {
 			updateNeeded, err = handleMissingMustHave(policy, remediation, rsrc, dclient, data)
 			if err != nil {
 				// violation created for handling error
@@ -705,7 +701,7 @@ func (r *ConfigurationPolicyReconciler) handleSingleObj(policy *policyv1.Configu
 	}
 	if exists && !objShouldExist {
 		//it is a mustnothave but it exist, so it must be deleted
-		if strings.ToLower(string(remediation)) == strings.ToLower(string(policyv1.Enforce)) {
+		if strings.EqualFold(string(remediation), string(policyv1.Enforce)) {
 			updateNeeded, err = handleExistsMustNotHave(policy, remediation, rsrc, dclient, data)
 			if err != nil {
 				glog.Errorf("error handling a existing object `%v` that is a must NOT have according to policy `%v`",
@@ -718,7 +714,7 @@ func (r *ConfigurationPolicyReconciler) handleSingleObj(policy *policyv1.Configu
 	if !exists && !objShouldExist {
 		//it is a must not have and it does not exist, so it is compliant
 		compliant = true
-		if strings.ToLower(string(remediation)) == strings.ToLower(string(policyv1.Enforce)) {
+		if strings.EqualFold(string(remediation), string(policyv1.Enforce)) {
 			glog.V(7).Infof("entering `does not exists` & ` must not have`")
 			updateNeeded = createMustNotHaveStatus(rsrc.Resource, compliantObject, namespaced, policy, index, compliant)
 		}
@@ -740,7 +736,7 @@ func (r *ConfigurationPolicyReconciler) handleSingleObj(policy *policyv1.Configu
 		} else if objShouldExist {
 			//it is a must have and it does exist, so it is compliant
 			compliant = true
-			if strings.ToLower(string(remediation)) == strings.ToLower(string(policyv1.Enforce)) {
+			if strings.EqualFold(string(remediation), string(policyv1.Enforce)) {
 				glog.V(7).Infof("entering `exists` & ` must have`")
 				updateNeeded = createMustHaveStatus("", rsrc.Resource, compliantObject, namespaced, policy, index, compliant)
 			}
@@ -764,7 +760,7 @@ func (r *ConfigurationPolicyReconciler) handleSingleObj(policy *policyv1.Configu
 		return nil, false, "", updateNeeded
 	}
 
-	if strings.ToLower(string(remediation)) == strings.ToLower(string(policyv1.Inform)) || specViolation {
+	if strings.EqualFold(string(remediation), string(policyv1.Inform)) || specViolation {
 		return []string{name}, compliant, rsrc.Resource, updateNeeded
 	}
 
@@ -966,7 +962,7 @@ func handleExistsMustNotHave(plc *policyv1.ConfigurationPolicy, action policyv1.
 	var update, deleted bool
 	var err error
 
-	if strings.ToLower(string(action)) == strings.ToLower(string(policyv1.Enforce)) {
+	if strings.EqualFold(string(action), string(policyv1.Enforce)) {
 		nameStr := createResourceNameStr([]string{name}, namespace, namespaced)
 		if deleted, err = deleteObject(namespaced, namespace, name, rsrc, dclient); !deleted {
 			message := fmt.Sprintf("%v %v exists, and cannot be deleted, reason: `%v`", rsrc.Resource, nameStr, err)
@@ -992,7 +988,7 @@ func handleMissingMustHave(plc *policyv1.ConfigurationPolicy, action policyv1.Re
 
 	var update, created bool
 	var err error
-	if strings.ToLower(string(action)) == strings.ToLower(string(policyv1.Enforce)) {
+	if strings.EqualFold(string(action), string(policyv1.Enforce)) {
 		nameStr := createResourceNameStr([]string{name}, namespace, namespaced)
 		if created, err = createObject(namespaced, namespace, name, rsrc, unstruct, dclient); !created {
 			message := fmt.Sprintf("%v %v is missing, and cannot be created, reason: `%v`", rsrc.Resource, nameStr, err)
@@ -1266,10 +1262,7 @@ func isSorted(arr []interface{}) (result bool) {
 	sort.Slice(arr, func(i, j int) bool {
 		return fmt.Sprintf("%v", arr[i]) < fmt.Sprintf("%v", arr[j])
 	})
-	if fmt.Sprint(arrCopy) != fmt.Sprint(arr) {
-		return false
-	}
-	return true
+	return fmt.Sprint(arrCopy) == fmt.Sprint(arr)
 }
 
 // mergeArrays is a helper function that takes a list from the existing object and merges in all the data that is
@@ -1455,7 +1448,7 @@ func handleKeys(unstruct unstructured.Unstructured, existingObj *unstructured.Un
 		}
 		mapMtx.Unlock()
 		if updateNeeded {
-			if (strings.ToLower(string(remediation)) == strings.ToLower(string(policyv1.Inform))) || isStatus {
+			if (strings.EqualFold(string(remediation), string(policyv1.Inform))) || isStatus {
 				return false, true, "", false
 			}
 			//update resource if template is enforce
@@ -1628,7 +1621,6 @@ func handleAddingPolicy(plc *policyv1.ConfigurationPolicy) error {
 	return err
 }
 
-//=================================================================
 // Helper function to join strings
 func join(strs ...string) string {
 	var result string
@@ -1641,7 +1633,6 @@ func join(strs ...string) string {
 	return result
 }
 
-//=================================================================
 // Helper functions that pretty prints a map
 func printMap(myMap map[string]*policyv1.ConfigurationPolicy) {
 	if len(myMap) == 0 {
@@ -1652,11 +1643,7 @@ func printMap(myMap map[string]*policyv1.ConfigurationPolicy) {
 
 	mapToPrint := map[string][]string{}
 	for k, v := range myMap {
-		if _, ok := mapToPrint[v.Name]; ok {
-			mapToPrint[v.Name] = append(mapToPrint[v.Name], strings.Split(k, "/")[0])
-		} else {
-			mapToPrint[v.Name] = []string{strings.Split(k, "/")[0]}
-		}
+		mapToPrint[v.Name] = append(mapToPrint[v.Name], strings.Split(k, "/")[0])
 	}
 
 	for k, v := range mapToPrint {
@@ -1713,7 +1700,6 @@ func createParentPolicy(instance *policyv1.ConfigurationPolicy) extpoliciesv1.Po
 	return plc
 }
 
-//=================================================================
 // convertPolicyStatusToString to be able to pass the status as event
 func convertPolicyStatusToString(plc *policyv1.ConfigurationPolicy) (results string) {
 	result := "ComplianceState is still undetermined"

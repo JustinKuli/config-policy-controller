@@ -9,7 +9,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-//=================================================================
 // GetSelectedNamespaces returns the list of filtered namespaces according to the policy namespace selector
 func GetSelectedNamespaces(included, excluded, allNamespaces []string) []string {
 	//then get the list of included
@@ -33,7 +32,6 @@ func GetSelectedNamespaces(included, excluded, allNamespaces []string) []string 
 	return finalList
 }
 
-//=================================================================
 //GetAllNamespaces gets the list of all namespaces from k8s
 func GetAllNamespaces() (list []string, err error) {
 	namespaces := (*KubeClient).CoreV1().Namespaces()
