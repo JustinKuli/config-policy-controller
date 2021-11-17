@@ -47,9 +47,6 @@ var log = logf.Log.WithName(ControllerName)
 // availablePolicies is a cach all all available polices
 var availablePolicies common.SyncedPolicyMap
 
-// PlcChan a channel used to pass policies ready for update
-var PlcChan chan *policyv1.ConfigurationPolicy
-
 var clientSet *kubernetes.Clientset
 
 var eventNormal = "Normal"
@@ -70,9 +67,6 @@ var config *rest.Config
 
 //Mx for making the map thread safe
 var Mx sync.RWMutex
-
-//MxUpdateMap for making the map thread safe
-var MxUpdateMap sync.RWMutex
 
 // KubeClient a k8s client used for k8s native resources
 var KubeClient *kubernetes.Interface
@@ -95,7 +89,6 @@ func (r *ConfigurationPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error
 func Initialize(kubeconfig *rest.Config, clientset *kubernetes.Clientset,
 	kubeClient *kubernetes.Interface, mgr manager.Manager, namespace, eventParent string) {
 	InitializeClient(kubeClient)
-	PlcChan = make(chan *policyv1.ConfigurationPolicy, 100) //buffering up to 100 policies for update
 	NamespaceWatched = namespace
 	clientSet = clientset
 	EventOnParent = strings.ToLower(eventParent)
@@ -112,8 +105,6 @@ var _ reconcile.Reconciler = &ConfigurationPolicyReconciler{}
 
 // ConfigurationPolicyReconciler reconciles a ConfigurationPolicy object
 type ConfigurationPolicyReconciler struct {
-	// This client, initialized using mgr.Client() above, is a split client
-	// that reads objects from the cache and writes to the apiserver
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
@@ -365,7 +356,7 @@ func (r *ConfigurationPolicyReconciler) handleObjectTemplates(plc policyv1.Confi
 		objNamespaced := false
 		//iterate through all namespaces the configurationpolicy is set on
 		for _, ns := range relevantNamespaces {
-			names, compliant, reason, objKind, related, update, namespaced := r.handleObjects(objectT, ns, indx, &plc, config,
+			names, compliant, reason, objKind, related, update, namespaced := r.handleObjects(objectT, ns, indx, &plc,
 				apiresourcelist, apigroups)
 			if update {
 				parentUpdate = true
@@ -553,8 +544,8 @@ func createInformStatus(mustNotHave bool, numCompliant int, numNonCompliant int,
 }
 
 //handleObjects controls the processing of each individual object template within a configurationpolicy
-func (r *ConfigurationPolicyReconciler) handleObjects(objectT *policyv1.ObjectTemplate, namespace string, index int, policy *policyv1.ConfigurationPolicy,
-	config *rest.Config, apiresourcelist []*metav1.APIResourceList,
+func (r *ConfigurationPolicyReconciler) handleObjects(objectT *policyv1.ObjectTemplate, namespace string, index int,
+	policy *policyv1.ConfigurationPolicy, apiresourcelist []*metav1.APIResourceList,
 	apigroups []*restmapper.APIGroupResources) (objNameList []string, compliant bool, reason string,
 	rsrcKind string, relatedObjects []policyv1.RelatedObject, pUpdate bool, isNamespaced bool) {
 	if namespace != "" {

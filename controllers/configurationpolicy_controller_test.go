@@ -7,14 +7,12 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"strings"
 	"testing"
 
 	policiesv1alpha1 "github.com/open-cluster-management/config-policy-controller/api/v1"
 	"github.com/open-cluster-management/config-policy-controller/pkg/common"
 	"github.com/stretchr/testify/assert"
 	coretypes "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -22,12 +20,8 @@ import (
 	testclient "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
-
-var mgr manager.Manager
-var err error
 
 func TestReconcile(t *testing.T) {
 	var (
@@ -82,130 +76,6 @@ func TestReconcile(t *testing.T) {
 	}
 	t.Log(res)
 }
-
-// func TestHandleObjectTemplates(t *testing.T) {
-// 	var typeMeta = metav1.TypeMeta{
-// 		Kind: "namespace",
-// 	}
-// 	var objMeta = metav1.ObjectMeta{
-// 		Name: "default",
-// 	}
-// 	var ns = coretypes.Namespace{
-// 		TypeMeta:   typeMeta,
-// 		ObjectMeta: objMeta,
-// 	}
-// 	defJSON := []byte(`{
-// 		"apiVersion": "v1",
-// 		"kind": "Pod"
-// 	}`)
-
-// 	re := runtime.RawExtension{}
-// 	re.Raw = append(re.Raw[0:0], defJSON...)
-
-// 	instance := &policiesv1alpha1.ConfigurationPolicy{
-// 		ObjectMeta: metav1.ObjectMeta{
-// 			Name:      "foo",
-// 			Namespace: "default",
-// 		},
-// 		Spec: policiesv1alpha1.ConfigurationPolicySpec{
-// 			Severity: "low",
-// 			NamespaceSelector: policiesv1alpha1.Target{
-// 				Include: []string{"default", "kube-*"},
-// 				Exclude: []string{"kube-system"},
-// 			},
-// 			RemediationAction: "inform",
-// 			ObjectTemplates: []*policiesv1alpha1.ObjectTemplate{
-// 				&policiesv1alpha1.ObjectTemplate{
-// 					ComplianceType:   "musthave",
-// 					ObjectDefinition: re,
-// 				},
-// 			},
-// 		},
-// 	}
-// 	// Register operator types with the runtime scheme.
-// 	s := scheme.Scheme
-// 	s.AddKnownTypes(policiesv1alpha1.GroupVersion, instance)
-
-// 	var simpleClient kubernetes.Interface = testclient.NewSimpleClientset()
-// 	simpleClient.CoreV1().Namespaces().Create(&ns)
-// 	common.Initialize(&simpleClient, nil)
-
-// 	handleObjectTemplates(*instance)
-// }
-
-// func TestPeriodicallyExecConfigPolicies(t *testing.T) {
-// 	var (
-// 		name      = "foo"
-// 		namespace = "default"
-// 	)
-// 	var typeMeta = metav1.TypeMeta{
-// 		Kind: "namespace",
-// 	}
-// 	var objMeta = metav1.ObjectMeta{
-// 		Name: "default",
-// 	}
-// 	var ns = coretypes.Namespace{
-// 		TypeMeta:   typeMeta,
-// 		ObjectMeta: objMeta,
-// 	}
-// 	defJSON := []byte(`{
-// 		"apiVersion": "v1",
-// 		"kind": "Pod"
-// 	}`)
-
-// 	re := runtime.RawExtension{}
-// 	re.Raw = append(re.Raw[0:0], defJSON...)
-
-// 	// Mock request to simulate Reconcile() being called on an event for a
-// 	// watched resource .
-// 	req := reconcile.Request{
-// 		NamespacedName: types.NamespacedName{
-// 			Name:      name,
-// 			Namespace: namespace,
-// 		},
-// 	}
-// 	instance := &policiesv1alpha1.ConfigurationPolicy{
-// 		ObjectMeta: metav1.ObjectMeta{
-// 			Name:      "foo",
-// 			Namespace: "default",
-// 		},
-// 		Spec: policiesv1alpha1.ConfigurationPolicySpec{
-// 			Severity: "low",
-// 			NamespaceSelector: policiesv1alpha1.Target{
-// 				Include: []string{"default", "kube-*"},
-// 				Exclude: []string{"kube-system"},
-// 			},
-// 			RemediationAction: "inform",
-// 			ObjectTemplates:   []*policiesv1alpha1.ObjectTemplate{},
-// 		},
-// 	}
-
-// 	// Objects to track in the fake client.
-// 	objs := []runtime.Object{instance}
-// 	// Register operator types with the runtime scheme.
-// 	s := scheme.Scheme
-// 	s.AddKnownTypes(policiesv1alpha1.GroupVersion, instance)
-
-// 	// Create a fake client to mock API calls.
-// 	cl := fake.NewFakeClient(objs...)
-
-// 	// Create a ReconcileConfigurationPolicy object with the scheme and fake client.
-// 	r := &ReconcileConfigurationPolicy{client: cl, scheme: s, recorder: nil}
-// 	var simpleClient kubernetes.Interface = testclient.NewSimpleClientset()
-// 	simpleClient.CoreV1().Namespaces().Create(&ns)
-// 	common.Initialize(&simpleClient, nil)
-// 	InitializeClient(&simpleClient)
-// 	res, err := r.Reconcile(req)
-// 	if err != nil {
-// 		t.Fatalf("reconcile: (%v)", err)
-// 	}
-// 	t.Log(res)
-// 	var target = []string{"default"}
-// 	samplePolicy.Spec.NamespaceSelector.Include = target
-// 	err = handleAddingPolicy(&samplePolicy)
-// 	assert.Nil(t, err)
-// 	PeriodicallyExecConfigPolicies(1, true)
-// }
 
 func TestCompareSpecs(t *testing.T) {
 	var spec1 = map[string]interface{}{
@@ -538,26 +408,12 @@ func TestSortRelatedObjectsAndUpdate(t *testing.T) {
 	assert.True(t, relatedList[0].Object.Metadata.Namespace == "bar")
 
 	// clear related objects and test sorting with no namespace
-	relatedList = []policiesv1alpha1.RelatedObject{}
 	name = "foo"
 	relatedList = addRelatedObjects(policy, true, rsrc, "", false, []string{name}, "reason")
 	name = "bar"
 	relatedList = append(relatedList, addRelatedObjects(policy, true, rsrc, "", false, []string{name}, "reason")...)
 	sortRelatedObjectsAndUpdate(policy, relatedList, empty)
 	assert.True(t, relatedList[0].Object.Metadata.Name == "bar")
-}
-
-func newRule(verbs, apiGroups, resources, nonResourceURLs string) rbacv1.PolicyRule {
-	return rbacv1.PolicyRule{
-		Verbs:           strings.Split(verbs, ","),
-		APIGroups:       strings.Split(apiGroups, ","),
-		Resources:       strings.Split(resources, ","),
-		NonResourceURLs: strings.Split(nonResourceURLs, ","),
-	}
-}
-
-func newRole(name, namespace string, rules ...rbacv1.PolicyRule) *rbacv1.Role {
-	return &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}, Rules: rules}
 }
 
 func TestCreateInformStatus(t *testing.T) {
