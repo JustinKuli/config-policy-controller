@@ -67,9 +67,6 @@ var config *rest.Config
 //Mx for making the map thread safe
 var Mx sync.RWMutex
 
-// KubeClient a k8s client used for k8s native resources
-var KubeClient *kubernetes.Interface
-
 // NamespaceWatched defines which namespace we can watch for the GRC policies and ignore others
 var NamespaceWatched string
 
@@ -85,11 +82,9 @@ func (r *ConfigurationPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error
 }
 
 // Initialize to initialize some controller variables
-func Initialize(kubeconfig *rest.Config, clientset *kubernetes.Clientset,
-	kubeClient *kubernetes.Interface, namespace, eventParent string) {
+func Initialize(kubeconfig *rest.Config, clientset *kubernetes.Clientset, namespace, eventParent string) {
 	config = kubeconfig
 	clientSet = clientset
-	KubeClient = kubeClient
 	NamespaceWatched = namespace
 	EventOnParent = strings.ToLower(eventParent)
 }
@@ -210,9 +205,6 @@ func (r *ConfigurationPolicyReconciler) PeriodicallyExecConfigPolicies(freq uint
 			remainingSleep := float64(freq) - float64(elapsed)
 			time.Sleep(time.Duration(remainingSleep) * time.Second)
 		}
-		if KubeClient == nil {
-			return
-		}
 		if test {
 			return
 		}
@@ -246,7 +238,8 @@ func (r *ConfigurationPolicyReconciler) handleObjectTemplates(plc policyv1.Confi
 	// this is optional but since apiresourcelist is already available,
 	// use this rather than re-discovering the list for generic-lookup
 	tmplResolverCfg := templates.Config{KubeAPIResourceList: apiresourcelist}
-	tmplResolver, err := templates.NewResolver(KubeClient, config, tmplResolverCfg)
+	kubeclient := kubernetes.Interface(clientSet)
+	tmplResolver, err := templates.NewResolver(&kubeclient, config, tmplResolverCfg)
 	if err != nil {
 		// Panic here since this error is unrecoverable
 		glog.Errorf("Failed to create a template resolver: %v", err)
@@ -1031,7 +1024,7 @@ func getPolicyNamespaces(policy policyv1.ConfigurationPolicy) []string {
 func getAllNamespaces() (list []string) {
 	listOpt := &metav1.ListOptions{}
 
-	nsList, err := (*KubeClient).CoreV1().Namespaces().List(context.TODO(), *listOpt)
+	nsList, err := clientSet.CoreV1().Namespaces().List(context.TODO(), *listOpt)
 	if err != nil {
 		glog.Errorf("Error fetching namespaces from the API server: %v", err)
 	}

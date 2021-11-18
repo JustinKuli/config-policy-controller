@@ -69,7 +69,7 @@ func TestReconcile(t *testing.T) {
 		},
 	}
 	var simpleClient kubernetes.Interface = testclient.NewSimpleClientset()
-	common.Initialize(&simpleClient, nil)
+	common.Initialize(simpleClient, nil)
 	res, err := r.Reconcile(context.TODO(), req)
 	if err != nil {
 		t.Fatalf("reconcile: (%v)", err)
@@ -248,7 +248,7 @@ func TestHandleAddingPolicy(t *testing.T) {
 		ObjectMeta: objMeta,
 	}
 	simpleClient.CoreV1().Namespaces().Create(context.TODO(), &ns, metav1.CreateOptions{})
-	common.Initialize(&simpleClient, nil)
+	common.Initialize(simpleClient, nil)
 	err := handleAddingPolicy(&samplePolicy)
 	assert.Nil(t, err)
 	handleRemovingPolicy(samplePolicy.GetName())
