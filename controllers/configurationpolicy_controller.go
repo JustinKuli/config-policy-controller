@@ -143,7 +143,7 @@ func (r *ConfigurationPolicyReconciler) PeriodicallyExecConfigPolicies(freq uint
 	cachedApiGroupsList := []*restmapper.APIGroupResources{}
 	for {
 		start := time.Now()
-		printMap(availablePolicies.PolicyMap)
+		log.V(2).Info(sprintMap(availablePolicies.PolicyMap))
 		flattenedPolicyList := map[string]*policyv1.ConfigurationPolicy{}
 		for _, policy := range availablePolicies.PolicyMap {
 			key := fmt.Sprintf("%s/%s", policy.GetName(), policy.GetResourceVersion())
@@ -1580,13 +1580,13 @@ func join(strs ...string) string {
 	return result
 }
 
-// Helper functions that pretty prints a map
-func printMap(myMap map[string]*policyv1.ConfigurationPolicy) {
+// Helper functions that pretty prints a map to a string
+func sprintMap(myMap map[string]*policyv1.ConfigurationPolicy) string {
+	var out strings.Builder
 	if len(myMap) == 0 {
-		log.V(2).Info("Waiting for policies to be available for processing")
-		return
+		return "<Waiting for policies to be available for processing>"
 	}
-	log.V(2).Info("Available policies in namespaces:")
+	out.WriteString("Available policies in namespaces:\n")
 
 	mapToPrint := map[string][]string{}
 	for k, v := range myMap {
@@ -1602,8 +1602,9 @@ func printMap(myMap map[string]*policyv1.ConfigurationPolicy) {
 			}
 		}
 		nsString += "]"
-		log.V(2).Info("ConfigPolicy", "name", k, "namespace", nsString)
+		fmt.Fprintf(&out, "\tconfigpolicy %s in namespace(s) %s", k, nsString)
 	}
+	return out.String()
 }
 
 func (r *ConfigurationPolicyReconciler) createParentPolicyEvent(instance *policyv1.ConfigurationPolicy) {
