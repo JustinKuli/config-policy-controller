@@ -889,20 +889,32 @@ func getDetails(unstruct unstructured.Unstructured) (name string, kind string, n
 	return name, kind, namespace
 }
 
-//buildNameList is a helper function to pull names of resources that match an objectTemplate from a list of resources
-func buildNameList(unstruct unstructured.Unstructured, complianceType string,
-	resList *unstructured.UnstructuredList) (kindNameList []string) {
-	for i := range resList.Items {
-		uObj := resList.Items[i]
+// getNamesOfKind returns an array with names of all of the resources found
+// matching the GVK specified.
+func getNamesOfKind(unstruct unstructured.Unstructured, rsrc schema.GroupVersionResource,
+	namespaced bool, ns string, dclient dynamic.Interface, complianceType string) []string {
+	var res dynamic.ResourceInterface
+	if namespaced {
+		res = dclient.Resource(rsrc).Namespace(ns)
+	} else {
+		res = dclient.Resource(rsrc)
+	}
+
+	resList, err := res.List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		log.Error(err, "Could not list resources", "rsrc", rsrc, "namespaced", namespaced)
+		return nil
+	}
+
+	kindNameList := make([]string, 0)
+	for _, uObj := range resList.Items {
 		match := true
 		for key := range unstruct.Object {
 			//if any key in the object generates a mismatch, the object does not match the template and we
 			//do not add its name to the list
 			errorMsg, updateNeeded, _, skipped := handleSingleKey(key, unstruct, &uObj, complianceType)
-			if !skipped {
-				if errorMsg != "" || updateNeeded {
-					match = false
-				}
+			if !skipped && (errorMsg != "" || updateNeeded) {
+				match = false
 			}
 		}
 		if match {
@@ -910,28 +922,6 @@ func buildNameList(unstruct unstructured.Unstructured, complianceType string,
 		}
 	}
 	return kindNameList
-}
-
-// getNamesOfKind returns an array with names of all of the resources found
-// matching the GVK specified.
-func getNamesOfKind(unstruct unstructured.Unstructured, rsrc schema.GroupVersionResource,
-	namespaced bool, ns string, dclient dynamic.Interface, complianceType string) (kindNameList []string) {
-	if namespaced {
-		res := dclient.Resource(rsrc).Namespace(ns)
-		resList, err := res.List(context.TODO(), metav1.ListOptions{})
-		if err != nil {
-			log.Error(err, "Could not list resources", "rsrc", rsrc, "namespaced", namespaced)
-			return kindNameList
-		}
-		return buildNameList(unstruct, complianceType, resList)
-	}
-	res := dclient.Resource(rsrc)
-	resList, err := res.List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		log.Error(err, "Could not list resources", "rsrc", rsrc, "namespaced", namespaced)
-		return kindNameList
-	}
-	return buildNameList(unstruct, complianceType, resList)
 }
 
 func handleExistsMustNotHave(plc *policyv1.ConfigurationPolicy, action policyv1.RemediationAction,
