@@ -450,7 +450,7 @@ func addConditionToStatus(plc *policyv1.ConfigurationPolicy, cond *policyv1.Cond
 	(*plc).Status.CompliancyDetails[index].ComplianceState = complianceState
 
 	//do not add condition unless it does not already appear in the status
-	if !checkMessageSimilarity((*plc).Status.CompliancyDetails[index].Conditions, cond) {
+	if !lastMessageIsSimilar((*plc).Status.CompliancyDetails[index].Conditions, cond) {
 		conditions := AppendCondition((*plc).Status.CompliancyDetails[index].Conditions, cond)
 		(*plc).Status.CompliancyDetails[index].Conditions = conditions
 		update = true
@@ -850,7 +850,7 @@ func (r *ConfigurationPolicyReconciler) getMapping(apigroups []*restmapper.APIGr
 			}
 			policy.Status.CompliancyDetails[index].ComplianceState = policyv1.NonCompliant
 
-			if !checkMessageSimilarity(policy.Status.CompliancyDetails[index].Conditions, cond) {
+			if !lastMessageIsSimilar(policy.Status.CompliancyDetails[index].Conditions, cond) {
 				conditions := AppendCondition(policy.Status.CompliancyDetails[index].Conditions, cond)
 				policy.Status.CompliancyDetails[index].Conditions = conditions
 				updateNeeded = true
@@ -1034,20 +1034,16 @@ func getAllNamespaces() (list []string) {
 	return namespacesNames
 }
 
-//checkMessageSimilarity decides whether to append a new condition to a configurationPolicy status
-//based on whether it is too similar to the previous one
-func checkMessageSimilarity(conditions []policyv1.Condition, cond *policyv1.Condition) bool {
-	same := true
-	lastIndex := len(conditions)
-	if lastIndex > 0 {
-		oldCond := conditions[lastIndex-1]
-		if !IsSimilarToLastCondition(oldCond, *cond) {
-			same = false
-		}
-	} else {
-		same = false
+// lastMessageIsSimilar checks if the last condition in the array is similar to the given condition
+func lastMessageIsSimilar(conditions []policyv1.Condition, cond *policyv1.Condition) bool {
+	if len(conditions) == 0 {
+		return false
 	}
-	return same
+	oldCond := conditions[len(conditions)-1]
+	return reflect.DeepEqual(oldCond.Status, cond.Status) &&
+		reflect.DeepEqual(oldCond.Reason, cond.Reason) &&
+		reflect.DeepEqual(oldCond.Message, cond.Message) &&
+		reflect.DeepEqual(oldCond.Type, cond.Type)
 }
 
 // objectExists gets object with dynamic client, returns true if the object is found
@@ -1452,17 +1448,6 @@ func AppendCondition(conditions []policyv1.Condition, newCond *policyv1.Conditio
 	}
 	conditions[len(conditions)-1] = *newCond
 	return conditions
-}
-
-//IsSimilarToLastCondition checks the diff, so that we don't keep updating with the same info
-func IsSimilarToLastCondition(oldCond policyv1.Condition, newCond policyv1.Condition) bool {
-	if reflect.DeepEqual(oldCond.Status, newCond.Status) &&
-		reflect.DeepEqual(oldCond.Reason, newCond.Reason) &&
-		reflect.DeepEqual(oldCond.Message, newCond.Message) &&
-		reflect.DeepEqual(oldCond.Type, newCond.Type) {
-		return true
-	}
-	return false
 }
 
 //addForUpdate calculates the compliance status of a configurationPolicy and updates its status field if needed
