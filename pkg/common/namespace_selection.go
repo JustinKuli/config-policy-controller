@@ -7,6 +7,7 @@ import (
 	"context"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 // GetSelectedNamespaces returns the list of filtered namespaces according to the policy namespace selector
@@ -33,13 +34,16 @@ func GetSelectedNamespaces(included, excluded, allNamespaces []string) []string 
 }
 
 //GetAllNamespaces gets the list of all namespaces from k8s
-func GetAllNamespaces() (list []string, err error) {
-	namespaces := KubeClient.CoreV1().Namespaces()
+func GetAllNamespaces(client kubernetes.Interface) ([]string, error) {
+	namespaces := client.CoreV1().Namespaces()
 	namespaceList, err := namespaces.List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
 
 	namespacesNames := []string{}
 	for _, n := range namespaceList.Items {
 		namespacesNames = append(namespacesNames, n.Name)
 	}
-	return namespacesNames, err
+	return namespacesNames, nil
 }

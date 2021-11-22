@@ -94,7 +94,6 @@ func TestGetAllNamespaces(t *testing.T) {
 	}
 	var simpleClient kubernetes.Interface = testclient.NewSimpleClientset()
 	simpleClient.CoreV1().Namespaces().Create(context.TODO(), &ns, metav1.CreateOptions{})
-	Initialize(simpleClient, nil)
-	_, err := GetAllNamespaces()
+	_, err := GetAllNamespaces(simpleClient)
 	assert.Nil(t, err)
 }

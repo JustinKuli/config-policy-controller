@@ -979,7 +979,10 @@ func handleMissingMustHave(plc *policyv1.ConfigurationPolicy, action policyv1.Re
 
 func getPolicyNamespaces(policy policyv1.ConfigurationPolicy) []string {
 	//get all namespaces
-	allNamespaces := getAllNamespaces()
+	allNamespaces, err := common.GetAllNamespaces(clientSet)
+	if err != nil {
+		return nil
+	}
 	//then get the list of included
 	includedNamespaces := []string{}
 	included := policy.Spec.NamespaceSelector.Include
@@ -1007,21 +1010,6 @@ func getPolicyNamespaces(policy policyv1.ConfigurationPolicy) []string {
 		finalList = append(finalList, "")
 	}
 	return finalList
-}
-
-func getAllNamespaces() (list []string) {
-	listOpt := &metav1.ListOptions{}
-
-	nsList, err := clientSet.CoreV1().Namespaces().List(context.TODO(), *listOpt)
-	if err != nil {
-		log.Error(err, "Could not list namespaces from the API server")
-	}
-	namespacesNames := []string{}
-	for _, n := range nsList.Items {
-		namespacesNames = append(namespacesNames, n.Name)
-	}
-
-	return namespacesNames
 }
 
 // lastMessageIsSimilar checks if the last condition in the array is similar to the given condition
@@ -1499,7 +1487,7 @@ func handleRemovingPolicy(name string) {
 
 //handleAddingPolicy adds a configurationPolicy to the list of configurationPolicies that the controller is processing
 func handleAddingPolicy(plc *policyv1.ConfigurationPolicy) error {
-	allNamespaces, err := common.GetAllNamespaces()
+	allNamespaces, err := common.GetAllNamespaces(clientSet)
 	if err != nil {
 		return err
 	}
