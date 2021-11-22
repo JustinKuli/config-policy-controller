@@ -770,7 +770,7 @@ func getResourceAndDynamicClient(mapping *meta.RESTMapping, apiresourcelist []*m
 	// check all resources in the list of resources on the cluster to get a match for the mapping
 	rsrc = mapping.Resource
 	for _, apiresourcegroup := range apiresourcelist {
-		if apiresourcegroup.GroupVersion == join(mapping.GroupVersionKind.Group, "/", mapping.GroupVersionKind.Version) {
+		if apiresourcegroup.GroupVersion == mapping.GroupVersionKind.Group+"/"+mapping.GroupVersionKind.Version {
 			for _, apiresource := range apiresourcegroup.APIResources {
 				if apiresource.Name == mapping.Resource.Resource && apiresource.Kind == mapping.GroupVersionKind.Kind {
 					namespaced = apiresource.Namespaced
@@ -1541,18 +1541,6 @@ func handleAddingPolicy(plc *policyv1.ConfigurationPolicy) error {
 		availablePolicies.AddObject(key, plc)
 	}
 	return err
-}
-
-// Helper function to join strings
-func join(strs ...string) string {
-	var result string
-	if strs[0] == "" {
-		return strs[len(strs)-1]
-	}
-	for _, str := range strs {
-		result += str
-	}
-	return result
 }
 
 // Helper functions that pretty prints a map to a string
