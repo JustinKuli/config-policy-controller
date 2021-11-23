@@ -138,7 +138,7 @@ func (r *ConfigurationPolicyReconciler) Reconcile(ctx context.Context, request c
 
 // PeriodicallyExecConfigPolicies loops through all configurationpolicies in the target namespace and triggers
 // template handling for each one. This function drives all the work the configuration policy controller does.
-func (r *ConfigurationPolicyReconciler) PeriodicallyExecConfigPolicies(freq uint, test bool) {
+func (r *ConfigurationPolicyReconciler) PeriodicallyExecConfigPolicies(freq uint) {
 	cachedApiResourceList := []*metav1.APIResourceList{}
 	cachedApiGroupsList := []*restmapper.APIGroupResources{}
 	for {
@@ -203,9 +203,6 @@ func (r *ConfigurationPolicyReconciler) PeriodicallyExecConfigPolicies(freq uint
 		if float64(freq) > float64(elapsed) {
 			remainingSleep := float64(freq) - float64(elapsed)
 			time.Sleep(time.Duration(remainingSleep) * time.Second)
-		}
-		if test {
-			return
 		}
 	}
 }
