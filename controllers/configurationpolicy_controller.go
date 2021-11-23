@@ -436,23 +436,25 @@ func sortRelatedObjectsAndUpdate(plc *policyv1.ConfigurationPolicy, related,
 
 //helper function that appends a condition (violation or compliant) to the status of a configurationpolicy
 func addConditionToStatus(plc *policyv1.ConfigurationPolicy, cond *policyv1.Condition, index int,
-	complianceState policyv1.ComplianceState) (updateNeeded bool) {
+	complianceState policyv1.ComplianceState) bool {
 	var update bool
-	if len((*plc).Status.CompliancyDetails) <= index {
-		(*plc).Status.CompliancyDetails = append((*plc).Status.CompliancyDetails, policyv1.TemplateStatus{
+	if len(plc.Status.CompliancyDetails) <= index {
+		// jkulikau: I don't think this code is ever executed.
+		plc.Status.CompliancyDetails = append(plc.Status.CompliancyDetails, policyv1.TemplateStatus{
 			ComplianceState: complianceState,
 			Conditions:      []policyv1.Condition{},
 		})
 	}
-	if (*plc).Status.CompliancyDetails[index].ComplianceState != complianceState {
+
+	if plc.Status.CompliancyDetails[index].ComplianceState != complianceState {
 		update = true
 	}
-	(*plc).Status.CompliancyDetails[index].ComplianceState = complianceState
+	plc.Status.CompliancyDetails[index].ComplianceState = complianceState
 
 	//do not add condition unless it does not already appear in the status
-	if !lastMessageIsSimilar((*plc).Status.CompliancyDetails[index].Conditions, cond) {
-		conditions := AppendCondition((*plc).Status.CompliancyDetails[index].Conditions, cond)
-		(*plc).Status.CompliancyDetails[index].Conditions = conditions
+	if !lastMessageIsSimilar(plc.Status.CompliancyDetails[index].Conditions, cond) {
+		conditions := AppendCondition(plc.Status.CompliancyDetails[index].Conditions, cond)
+		plc.Status.CompliancyDetails[index].Conditions = conditions
 		update = true
 	}
 	return update
@@ -839,22 +841,8 @@ func (r *ConfigurationPolicyReconciler) getMapping(apigroups []*restmapper.APIGr
 				Reason:             "K8s creation error",
 				Message:            mappingErrMsg,
 			}
-			if len(policy.Status.CompliancyDetails) <= index {
-				policy.Status.CompliancyDetails = append(policy.Status.CompliancyDetails, policyv1.TemplateStatus{
-					ComplianceState: policyv1.NonCompliant,
-					Conditions:      []policyv1.Condition{},
-				})
-			}
-			if policy.Status.CompliancyDetails[index].ComplianceState != policyv1.NonCompliant {
-				updateNeeded = true
-			}
-			policy.Status.CompliancyDetails[index].ComplianceState = policyv1.NonCompliant
 
-			if !lastMessageIsSimilar(policy.Status.CompliancyDetails[index].Conditions, cond) {
-				conditions := AppendCondition(policy.Status.CompliancyDetails[index].Conditions, cond)
-				policy.Status.CompliancyDetails[index].Conditions = conditions
-				updateNeeded = true
-			}
+			updateNeeded = addConditionToStatus(policy, cond, index, policyv1.NonCompliant)
 		}
 		if updateNeeded {
 			//generate an event on the configurationpolicy if a violation is created
