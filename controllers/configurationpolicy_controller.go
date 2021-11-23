@@ -154,13 +154,14 @@ func (r *ConfigurationPolicyReconciler) PeriodicallyExecConfigPolicies(freq uint
 			}
 		}
 
+		skipLoop := false
+
 		//get resources once per cycle to avoid hanging
 		dd := clientSet.Discovery()
 		apiresourcelist, apiresourcelistErr := dd.ServerResources()
 		if len(apiresourcelist) > 0 {
 			cachedApiResourceList = append([]*metav1.APIResourceList{}, apiresourcelist...)
 		}
-		skipLoop := false
 		if apiresourcelistErr != nil && len(cachedApiResourceList) > 0 {
 			log.Error(apiresourcelistErr, "Could not get API resource list, using cached list")
 			apiresourcelist = cachedApiResourceList
@@ -168,6 +169,7 @@ func (r *ConfigurationPolicyReconciler) PeriodicallyExecConfigPolicies(freq uint
 			skipLoop = true
 			log.Error(apiresourcelistErr, "Could not get API resource list, skipping loop because cached list is empty")
 		}
+
 		apigroups, apigroupsErr := restmapper.GetAPIGroupResources(dd)
 		if len(apigroups) > 0 {
 			cachedApiGroupsList = append([]*restmapper.APIGroupResources{}, apigroups...)
@@ -179,6 +181,7 @@ func (r *ConfigurationPolicyReconciler) PeriodicallyExecConfigPolicies(freq uint
 			skipLoop = true
 			log.Error(apigroupsErr, "Could not get API groups list, skipping loop because cached list is empty")
 		}
+
 		if !skipLoop {
 			//flattenedpolicylist only contains 1 of each policy instance
 			for _, policy := range flattenedPolicyList {
@@ -196,7 +199,7 @@ func (r *ConfigurationPolicyReconciler) PeriodicallyExecConfigPolicies(freq uint
 
 		// making sure that if processing is > freq we don't sleep
 		// if freq > processing we sleep for the remaining duration
-		elapsed := time.Since(start) / 1000000000 // convert to seconds
+		elapsed := time.Since(start) / time.Second
 		if float64(freq) > float64(elapsed) {
 			remainingSleep := float64(freq) - float64(elapsed)
 			time.Sleep(time.Duration(remainingSleep) * time.Second)
@@ -242,14 +245,15 @@ func (r *ConfigurationPolicyReconciler) handleObjectTemplates(plc policyv1.Confi
 		panic(err)
 	}
 
+	// jkulikau: the contents of this loop should probably go in a separate function (and probably split up in there too)
 	for indx, objectT := range plc.Spec.ObjectTemplates {
 		nonCompliantObjects := map[string]map[string]interface{}{}
 		compliantObjects := map[string]map[string]interface{}{}
-		enforce := strings.ToLower(string(plc.Spec.RemediationAction)) == strings.ToLower(string(policyv1.Enforce))
+		enforce := strings.EqualFold(string(plc.Spec.RemediationAction), string(policyv1.Enforce))
 		relevantNamespaces := plcNamespaces
 		kind := ""
 		desiredName := ""
-		mustNotHave := strings.ToLower(string(objectT.ComplianceType)) == strings.ToLower(string(policyv1.MustNotHave))
+		mustNotHave := strings.EqualFold(string(objectT.ComplianceType), string(policyv1.MustNotHave))
 
 		//override policy namespaces if one is present in object template
 		var unstruct unstructured.Unstructured
@@ -258,67 +262,17 @@ func (r *ConfigurationPolicyReconciler) handleObjectTemplates(plc policyv1.Confi
 		// Here appears to be a  good place to hook in template processing
 		// This is at the head of objectemplate processing
 		// ( just before the perNamespace handling of objectDefinitions)
-
-		// check here to determine if the object definition has a template
-		// and execute  template-processing only if  there is a template pattern "{{" in it
-		// to avoid unnecessary parsing when there is no template in the definition.
-
-		//if disable-templates annotations exists and is true, then do not process templates
-		annotations := plc.GetAnnotations()
-		disableTemplates := false
-		if disableAnnotation, ok := annotations["policy.open-cluster-management.io/disable-templates"]; ok {
-			log.V(2).Info("Found disable-templates annotation", "value", disableAnnotation)
-			bool_disableAnnotation, err := strconv.ParseBool(disableAnnotation)
-			if err != nil {
-				log.Error(err, "Could not parse value for disable-templates annotation", "value", disableAnnotation)
-			} else {
-				disableTemplates = bool_disableAnnotation
+		processedObj, tmplErr := processTemplatedObject(plc, indx, tmplResolver)
+		if tmplErr != nil {
+			update := createViolation(&plc, indx, "Error processing template", tmplErr.Error())
+			if update {
+				r.Recorder.Event(&plc, eventWarning, fmt.Sprintf(plcFmtStr, plc.GetName()), convertPolicyStatusToString(&plc))
+				r.checkRelatedAndUpdate(update, plc, relatedObjects, oldRelated)
 			}
-		}
-		if !disableTemplates {
-
-			//first check to make sure there are no hub-templates with delimiter - {{hub
-			//if they exists, it means the template resolution on the hub did not succeed.
-			if templates.HasTemplate(objectT.ObjectDefinition.Raw, "{{hub") {
-				tmplErr := fmt.Errorf("configurationPolicy has hub-templates")
-				log.Error(tmplErr, "An error might have occured while processing hub-templates on the Hub Cluster")
-
-				//check to see there is an annotation set to the hub error msg,
-				//if not ,set a generic msg
-
-				hubTemplatesErrMsg, ok := annotations["policy.open-cluster-management.io/hub-templates-error"]
-				if !ok || hubTemplatesErrMsg == "" {
-					//set a generic msg
-					hubTemplatesErrMsg = "Error occured while processing hub-templates, check the policy events for more details."
-				}
-
-				update := createViolation(&plc, 0, "Error processing hub templates", hubTemplatesErrMsg)
-				if update {
-					r.Recorder.Event(&plc, eventWarning, fmt.Sprintf(plcFmtStr, plc.GetName()), convertPolicyStatusToString(&plc))
-					r.checkRelatedAndUpdate(update, plc, relatedObjects, oldRelated)
-				}
-				return
-			}
-
-			if templates.HasTemplate(objectT.ObjectDefinition.Raw, "") {
-				resolvedTemplate, tplErr := tmplResolver.ResolveTemplate(objectT.ObjectDefinition.Raw, nil)
-				if tplErr != nil {
-					update := createViolation(&plc, 0, "Error processing template", tplErr.Error()) //
-					if update {
-						r.Recorder.Event(&plc, eventWarning, fmt.Sprintf(plcFmtStr, plc.GetName()), convertPolicyStatusToString(&plc))
-						r.checkRelatedAndUpdate(update, plc, relatedObjects, oldRelated)
-					}
-					return
-				}
-
-				// Set the resolved data for use in further processing
-				objectT.ObjectDefinition.Raw = []byte(resolvedTemplate)
-			}
-
 		}
 
 		var blob interface{}
-		if jsonErr := json.Unmarshal(objectT.ObjectDefinition.Raw, &blob); jsonErr != nil {
+		if jsonErr := json.Unmarshal(processedObj, &blob); jsonErr != nil {
 			log.Error(jsonErr, "Could not unmarshal data from JSON")
 			return
 		}
@@ -395,6 +349,58 @@ func (r *ConfigurationPolicyReconciler) handleObjectTemplates(plc policyv1.Confi
 		}
 	}
 	r.checkRelatedAndUpdate(parentUpdate, plc, relatedObjects, oldRelated)
+}
+
+func processTemplatedObject(
+	plc policyv1.ConfigurationPolicy, objIndex int, tmplResolver *templates.TemplateResolver,
+) ([]byte, error) {
+	objectT := plc.Spec.ObjectTemplates[objIndex]
+
+	// check here to determine if the object definition has a template
+	// and execute  template-processing only if  there is a template pattern "{{" in it
+	// to avoid unnecessary parsing when there is no template in the definition.
+
+	//if disable-templates annotations exists and is true, then do not process templates
+	annotations := plc.GetAnnotations()
+	if disableAnnotation, ok := annotations["policy.open-cluster-management.io/disable-templates"]; ok {
+		log.V(2).Info("Found disable-templates annotation", "value", disableAnnotation)
+		doDisable, err := strconv.ParseBool(disableAnnotation)
+		if err != nil {
+			log.Error(err, "Could not parse value for disable-templates annotation", "value", disableAnnotation)
+		} else if doDisable {
+			return objectT.ObjectDefinition.Raw, nil
+		}
+	}
+
+	//first check to make sure there are no hub-templates with delimiter - {{hub
+	//if one exists, it means the template resolution on the hub did not succeed.
+	if templates.HasTemplate(objectT.ObjectDefinition.Raw, "{{hub") {
+		//check to see there is an annotation set to the hub error msg,
+		//if not, set a generic msg
+		hubTemplatesErrMsg, ok := annotations["policy.open-cluster-management.io/hub-templates-error"]
+		if !ok || hubTemplatesErrMsg == "" {
+			//set a generic msg
+			hubTemplatesErrMsg = "Error occured while processing hub-templates, check the policy events for more details."
+		}
+
+		tmplErr := fmt.Errorf("configurationPolicy has hub-templates")
+		log.Error(tmplErr, "An error might have occured while processing hub-templates on the Hub Cluster",
+			"hub-templates-error", hubTemplatesErrMsg)
+
+		return objectT.ObjectDefinition.Raw, tmplErr
+	}
+
+	if templates.HasTemplate(objectT.ObjectDefinition.Raw, "{{") {
+		resolvedTemplate, tplErr := tmplResolver.ResolveTemplate(objectT.ObjectDefinition.Raw, nil)
+		if tplErr != nil {
+			return objectT.ObjectDefinition.Raw, tplErr
+		}
+
+		return []byte(resolvedTemplate), nil
+	}
+
+	// No templates to process
+	return objectT.ObjectDefinition.Raw, nil
 }
 
 //checks related objects field and triggers an update on the configurationpolicy if it has changed
