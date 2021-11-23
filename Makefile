@@ -253,7 +253,10 @@ kind-create-cluster:
 	kind get kubeconfig --name $(KIND_NAME) > $(PWD)/kubeconfig_managed
 
 kind-delete-cluster:
-	kind delete cluster --name $(KIND_NAME)
+	kind delete cluster --name $(KIND_NAME) || true
+
+.PHONY: kind-tests
+kind-tests: kind-delete-cluster kind-bootstrap-cluster-dev make build-images make kind-deploy-controller-dev make e2e-test
 
 install-crds:
 	@echo installing crds
