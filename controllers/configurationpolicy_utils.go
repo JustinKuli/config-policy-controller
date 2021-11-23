@@ -18,7 +18,7 @@ import (
 // addRelatedObjects builds the list of kubernetes resources related to the policy.  The list contains
 // details on whether the object is compliant or not compliant with the policy.  The results are updated in the
 // policy's Status information.
-func addRelatedObjects(policy *policyv1.ConfigurationPolicy, compliant bool, rsrc schema.GroupVersionResource,
+func addRelatedObjects(compliant bool, rsrc schema.GroupVersionResource,
 	namespace string, namespaced bool, objNames []string, reason string) (relatedObjects []policyv1.RelatedObject) {
 
 	for _, name := range objNames {

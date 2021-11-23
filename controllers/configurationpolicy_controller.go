@@ -636,9 +636,9 @@ func (r *ConfigurationPolicyReconciler) handleObjects(objectT *policyv1.ObjectTe
 
 	if complianceCalculated {
 		// enforce could clear the objNames array so use name instead
-		relatedObjects = addRelatedObjects(policy, compliant, rsrc, namespace, namespaced, []string{name}, reason)
+		relatedObjects = addRelatedObjects(compliant, rsrc, namespace, namespaced, []string{name}, reason)
 	} else {
-		relatedObjects = addRelatedObjects(policy, compliant, rsrc, namespace, namespaced, objNames, reason)
+		relatedObjects = addRelatedObjects(compliant, rsrc, namespace, namespaced, objNames, reason)
 	}
 	return objNames, compliant, reason, rsrcKind, relatedObjects, needUpdate, namespaced
 }
