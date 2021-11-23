@@ -594,11 +594,8 @@ func (r *ConfigurationPolicyReconciler) handleObjects(objectT *policyv1.ObjectTe
 		}
 	}
 	objShouldExist := !strings.EqualFold(string(objectT.ComplianceType), string(policyv1.MustNotHave))
-	rsrcKind = ""
+	rsrcKind = rsrc.Resource
 	reason = ""
-	// if the compliance is calculated by the handleSingleObj function, do not override the setting
-	// we do this because the message string for single objects is different than for multiple
-	complianceCalculated := false
 	if len(objNames) == 1 {
 		name = objNames[0]
 		objNames, compliant, rsrcKind, needUpdate = r.handleSingleObj(policy, remediation, exists, objShouldExist, rsrc,
@@ -609,37 +606,27 @@ func (r *ConfigurationPolicyReconciler) handleObjects(objectT *policyv1.ObjectTe
 				"index":      index,
 				"unstruct":   unstruct,
 			})
-		complianceCalculated = true
-	}
-
-	if complianceCalculated {
 		reason = generateSingleObjReason(objShouldExist, compliant, exists)
-	} else {
-		if !exists && objShouldExist {
-			compliant = false
-			rsrcKind = rsrc.Resource
-			reason = reasonWantFoundDNE
-		} else if exists && !objShouldExist {
-			compliant = false
-			rsrcKind = rsrc.Resource
-			reason = reasonWantNotFoundExists
-		} else if !exists && !objShouldExist {
-			compliant = true
-			rsrcKind = rsrc.Resource
-			reason = reasonWantNotFoundDNE
-		} else if exists && objShouldExist {
-			compliant = true
-			rsrcKind = rsrc.Resource
-			reason = reasonWantFoundExists
-		}
-	}
-
-	if complianceCalculated {
 		// enforce could clear the objNames array so use name instead
 		relatedObjects = addRelatedObjects(compliant, rsrc, namespace, namespaced, []string{name}, reason)
-	} else {
-		relatedObjects = addRelatedObjects(compliant, rsrc, namespace, namespaced, objNames, reason)
+		return objNames, compliant, reason, rsrcKind, relatedObjects, needUpdate, namespaced
 	}
+
+	if !exists && objShouldExist {
+		compliant = false
+		reason = reasonWantFoundDNE
+	} else if exists && !objShouldExist {
+		compliant = false
+		reason = reasonWantNotFoundExists
+	} else if !exists && !objShouldExist {
+		compliant = true
+		reason = reasonWantNotFoundDNE
+	} else if exists && objShouldExist {
+		compliant = true
+		reason = reasonWantFoundExists
+	}
+
+	relatedObjects = addRelatedObjects(compliant, rsrc, namespace, namespaced, objNames, reason)
 	return objNames, compliant, reason, rsrcKind, relatedObjects, needUpdate, namespaced
 }
 
