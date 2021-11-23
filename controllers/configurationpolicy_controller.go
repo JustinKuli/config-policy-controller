@@ -211,11 +211,11 @@ func (r *ConfigurationPolicyReconciler) PeriodicallyExecConfigPolicies(freq uint
 }
 
 //handleObjectTemplates iterates through all policy templates in a given policy and processes them
-func (r *ConfigurationPolicyReconciler) handleObjectTemplates(plc policyv1.ConfigurationPolicy, apiresourcelist []*metav1.APIResourceList,
-	apigroups []*restmapper.APIGroupResources) {
+func (r *ConfigurationPolicyReconciler) handleObjectTemplates(plc policyv1.ConfigurationPolicy,
+	apiresourcelist []*metav1.APIResourceList, apigroups []*restmapper.APIGroupResources) {
 	log.V(1).Info("Processing object templates", "policy", plc.GetName())
+
 	//error if no remediationAction is specified
-	plcNamespaces := getPolicyNamespaces(plc)
 	if plc.Spec.RemediationAction == "" {
 		message := "Policy does not have a RemediationAction specified"
 		update := createViolation(&plc, 0, "No RemediationAction", message)
@@ -225,6 +225,9 @@ func (r *ConfigurationPolicyReconciler) handleObjectTemplates(plc policyv1.Confi
 		}
 		return
 	}
+
+	plcNamespaces := getPolicyNamespaces(plc)
+
 	// initialize the RelatedObjects for this Configuration Policy
 	oldRelated := []policyv1.RelatedObject{}
 	for i := range plc.Status.RelatedObjects {
@@ -977,33 +980,11 @@ func getPolicyNamespaces(policy policyv1.ConfigurationPolicy) []string {
 	if err != nil {
 		return nil
 	}
-	//then get the list of included
-	includedNamespaces := []string{}
-	included := policy.Spec.NamespaceSelector.Include
-	for _, value := range included {
-		found := common.FindPattern(string(value), allNamespaces)
-		if found != nil {
-			includedNamespaces = append(includedNamespaces, found...)
-		}
 
-	}
-	//then get the list of excluded
-	excludedNamespaces := []string{}
-	excluded := policy.Spec.NamespaceSelector.Exclude
-	for _, value := range excluded {
-		found := common.FindPattern(string(value), allNamespaces)
-		if found != nil {
-			excludedNamespaces = append(excludedNamespaces, found...)
-		}
+	included := policyv1.GetStrings(policy.Spec.NamespaceSelector.Include)
+	excluded := policyv1.GetStrings(policy.Spec.NamespaceSelector.Exclude)
 
-	}
-
-	//then get the list of deduplicated
-	finalList := common.DeduplicateItems(includedNamespaces, excludedNamespaces)
-	if len(finalList) == 0 {
-		finalList = append(finalList, "")
-	}
-	return finalList
+	return common.GetSelectedNamespaces(included, excluded, allNamespaces)
 }
 
 // lastMessageIsSimilar checks if the last condition in the array is similar to the given condition

@@ -191,3 +191,11 @@ type ObjectMetadata struct {
 func init() {
 	SchemeBuilder.Register(&ConfigurationPolicy{}, &ConfigurationPolicyList{})
 }
+
+func GetStrings(nes []NonEmptyString) []string {
+	out := make([]string, 0, len(nes))
+	for _, s := range nes {
+		out = append(out, string(s))
+	}
+	return out
+}
