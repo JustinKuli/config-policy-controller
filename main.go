@@ -10,9 +10,13 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 
+	"github.com/go-logr/zapr"
 	"github.com/spf13/pflag"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -29,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	policyv1 "github.com/stolostron/config-policy-controller/api/v1"
@@ -57,14 +60,47 @@ func init() {
 	utilruntime.Must(policyv1.AddToScheme(scheme))
 }
 
+type zapLevelFlag struct {
+	zapcore.Level
+}
+
+var _ pflag.Value = &zapLevelFlag{}
+
+// Set ensures that the level passed by a flag is valid
+func (f *zapLevelFlag) Set(val string) error {
+	level := strings.ToLower(val)
+	switch level {
+	case "debug":
+		f.Level = zap.DebugLevel
+	case "info":
+		f.Level = zap.InfoLevel
+	case "warn":
+		f.Level = zap.WarnLevel
+	case "error":
+		f.Level = zap.ErrorLevel
+	default:
+		l, err := strconv.Atoi(level)
+		if err != nil || l < 0 {
+			return fmt.Errorf("invalid log level \"%s\"", val)
+		}
+
+		f.Level = zapcore.Level(int8(-1 * l))
+	}
+
+	return nil
+}
+
+func (f *zapLevelFlag) Type() string {
+	return "level"
+}
+
 func main() {
-	opts := zap.Options{}
-	opts.BindFlags(flag.CommandLine)
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 
-	var clusterName, hubConfigSecretNs, hubConfigSecretName, probeAddr string
+	var clusterName, hubConfigSecretNs, hubConfigSecretName, probeAddr, zapEncoder string
 	var frequency, decryptionConcurrency uint
 	var enableLease, enableLeaderElection, legacyLeaderElection bool
+	var zapLevel zapLevelFlag
 
 	pflag.UintVar(&frequency, "update-frequency", 10,
 		"The status update frequency (in seconds) of a mutation policy")
@@ -87,20 +123,35 @@ func main() {
 		5,
 		"The max number of concurrent policy template decryptions",
 	)
+	pflag.Var(&zapLevel, "zap-log-level", "Zap Level to configure the verbosity of logging.")
+	pflag.StringVar(&zapEncoder, "zap-encoder", "console", "Zap log encoding (one of 'json' or 'console')")
 
 	pflag.Parse()
 
-	// If the v flag is set, then configure the zap level to match
-	vFlag := flag.Lookup("v")
-	if vFlag != nil {
-		err := flag.Set("zap-log-level", vFlag.Value.String())
-		if err != nil {
-			log.Error(err, "Unable to set zap-log-level", "desiredValue", vFlag.Value.String())
+	zapEncoderCfg := zap.NewProductionEncoderConfig()
+	zapEncoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+	zapEncoderCfg.EncodeLevel = func(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
+		num := int8(l)
+		if num > -2 { // These levels are known by zap, as "info", "error", etc.
+			enc.AppendString(l.String())
+		} else { // Zap doesn't like these levels as much. Format them like "lvl-n"
+			enc.AppendString("lvl" + strconv.Itoa(int(num)))
 		}
 	}
 
-	logr := zap.New(zap.UseFlagOptions(&opts))
-	ctrl.SetLogger(logr)
+	zapcfg := zap.Config{
+		Level:         zap.NewAtomicLevelAt(zapLevel.Level),
+		Encoding:      zapEncoder,
+		EncoderConfig: zapEncoderCfg,
+		OutputPaths:   []string{"stdout"},
+	}
+
+	zapLog, err := zapcfg.Build()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to build zap Logger from configuration: %v", err))
+	}
+
+	ctrl.SetLogger(zapr.NewLogger(zapLog))
 
 	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
 	klog.InitFlags(klogFlags)
@@ -118,8 +169,40 @@ func main() {
 		}
 	})
 
-	// send klog messages through our zap logger so they look the same (console vs JSON)
-	klog.SetLogger(logr)
+	// send klog messages through a zap logger so they have the same format
+	if zapEncoder == "console" { // klog already adds a newline, so have zap skip adding one.
+		zapcfg.EncoderConfig.SkipLineEnding = true
+	}
+
+	klogLevel, err := strconv.Atoi(pflag.Lookup("v").Value.String())
+	if err != nil {
+		log.Error(err, "Invalid value passed to 'v' flag - using '0' as a default")
+
+		klogLevel = 0
+	}
+
+	zapcfg.Level = zap.NewAtomicLevelAt(zapcore.Level(int8(-1 * klogLevel)))
+
+	kZapLog, err := zapcfg.Build()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to build zap Logger for klog from configuration: %v", err))
+	}
+
+	klog.SetLogger(zapr.NewLogger(kZapLog).WithName("klog"))
+
+	klog.V(0).Info("klog 0")
+	klog.V(1).Info("klog 1")
+	klog.V(2).Info("klog 2")
+	klog.V(3).Info("klog 3")
+	klog.V(4).Info("klog 4")
+	klog.V(5).Info("klog 5")
+
+	log.V(0).Info("zap 0")
+	log.V(1).Info("zap 1")
+	log.V(2).Info("zap 2")
+	log.V(3).Info("zap 3")
+	log.V(4).Info("zap 4")
+	log.V(5).Info("zap 5")
 
 	printVersion()
 
