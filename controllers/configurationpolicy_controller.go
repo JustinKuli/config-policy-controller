@@ -511,6 +511,25 @@ func (r *ConfigurationPolicyReconciler) handleObjectTemplates(plc policyv1.Confi
 
 	log.V(2).Info("Processing the object templates", "count", len(plc.Spec.ObjectTemplates))
 
+	// Parse and fetch details from each object in each objectTemplate, and gather namespaces if required
+	var templateObjs []objectTemplateDetails
+	var selectedNamespaces []string
+	var objTmplStatusChangeNeeded bool
+
+	templateObjs, selectedNamespaces, objTmplStatusChangeNeeded, err = r.getObjectTemplateDetails(plc)
+
+	if objTmplStatusChangeNeeded {
+		parentStatusUpdateNeeded = true
+	}
+
+	if err != nil {
+		if parentStatusUpdateNeeded {
+			r.checkRelatedAndUpdate(plc, relatedObjects, oldRelated, parentStatusUpdateNeeded)
+		}
+
+		return
+	}
+
 	for indx, objectT := range plc.Spec.ObjectTemplates {
 		nonCompliantObjects := map[string]map[string]interface{}{}
 		compliantObjects := map[string]map[string]interface{}{}
@@ -618,19 +637,6 @@ func (r *ConfigurationPolicyReconciler) handleObjectTemplates(plc policyv1.Confi
 				// Set the resolved data for use in further processing
 				objectT.ObjectDefinition.Raw = resolvedTemplate
 			}
-		}
-
-		// Parse and fetch details from each object in each objectTemplate, and gather namespaces if required
-		var templateObjs []objectTemplateDetails
-		var selectedNamespaces []string
-
-		templateObjs, selectedNamespaces, parentStatusUpdateNeeded, err = r.getObjectTemplateDetails(plc)
-		if err != nil {
-			if parentStatusUpdateNeeded {
-				r.checkRelatedAndUpdate(plc, relatedObjects, oldRelated, parentStatusUpdateNeeded)
-			}
-
-			return
 		}
 
 		// If the object does not have a namespace specified, use the previously retrieved namespaces
