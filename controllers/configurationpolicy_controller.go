@@ -1137,15 +1137,14 @@ func (r *ConfigurationPolicyReconciler) handleObjectTemplates(plc policyv1.Confi
 func (r *ConfigurationPolicyReconciler) checkRelatedAndUpdate(
 	plc policyv1.ConfigurationPolicy, related, oldRelated []policyv1.RelatedObject, sendEvent bool,
 ) {
-	r.sortRelatedObjectsAndUpdate(&plc, related, oldRelated, r.EnableMetrics)
+	sortRelatedObjectsAndUpdate(&plc, related, oldRelated, r.EnableMetrics)
 	// An update always occurs to account for the lastEvaluated status field
 	r.addForUpdate(&plc, sendEvent)
 }
 
 // helper function to check whether related objects has changed
-func (r *ConfigurationPolicyReconciler) sortRelatedObjectsAndUpdate(
-	plc *policyv1.ConfigurationPolicy, related, oldRelated []policyv1.RelatedObject,
-	collectMetrics bool,
+func sortRelatedObjectsAndUpdate(
+	plc *policyv1.ConfigurationPolicy, related, oldRelated []policyv1.RelatedObject, collectMetrics bool,
 ) {
 	sort.SliceStable(related, func(i, j int) bool {
 		if related[i].Object.Kind != related[j].Object.Kind {
@@ -1157,6 +1156,8 @@ func (r *ConfigurationPolicyReconciler) sortRelatedObjectsAndUpdate(
 
 		return related[i].Object.Metadata.Name < related[j].Object.Metadata.Name
 	})
+
+	update := false
 
 	// Instantiate found objects for the related object metric
 	found := map[string]bool{}
@@ -1215,34 +1216,19 @@ func (r *ConfigurationPolicyReconciler) sortRelatedObjectsAndUpdate(
 		}
 	}
 
-	if !gocmp.Equal(related, oldRelated) {
-		r.deleteDetachedObj(*plc, related, oldRelated)
+	if len(oldRelated) == len(related) {
+		for i, entry := range oldRelated {
+			if !gocmp.Equal(entry, related[i]) {
+				update = true
+			}
+		}
+	} else {
+		update = true
+	}
+
+	if update {
 		plc.Status.RelatedObjects = related
 	}
-}
-
-// helper function to delete unconnected objs
-func (r *ConfigurationPolicyReconciler) deleteDetachedObj(plc policyv1.ConfigurationPolicy,
-	related, oldRelated []policyv1.RelatedObject,
-) []policyv1.RelatedObject {
-	objShouldRemoved := []policyv1.RelatedObject{}
-	// Pick out only obj should be removed in oldRelated
-	for _, oldR := range oldRelated {
-		isContain := containRelated(related, oldR)
-
-		if !isContain {
-			objShouldRemoved = append(objShouldRemoved, oldR)
-		}
-	}
-
-	plc.Status.RelatedObjects = objShouldRemoved
-
-	// removed objs which are not related(detached) anymore
-	if r != nil {
-		r.cleanUpChildObjects(plc)
-	}
-	// For now this is for unit test
-	return objShouldRemoved
 }
 
 // helper function that appends a condition (violation or compliant) to the status of a configurationpolicy
